@@ -7,6 +7,7 @@ from video_qa.base import BaseVQA, work
 
 
 class ReKVStreamVQA(BaseVQA):
+    # load video with decord
     def load_video(self, video_path):
         if video_path.endswith('.npy'):  # FPS=1
             video = np.load(video_path)
@@ -21,6 +22,7 @@ class ReKVStreamVQA(BaseVQA):
             video = vr.get_batch(frame_idx).asnumpy()
         return video
 
+    # open qa
     def video_open_qa(self, question, max_new_tokens=1024):
         input_text = {
             "question": question,
@@ -42,11 +44,13 @@ class ReKVStreamVQA(BaseVQA):
         self.qa_model.clear_cache()
         self.qa_model.encode_init_prompt()
 
+        # conversations
         for sample in video_sample['conversations']:
             logger.debug(f'sample: {sample}')
             question = sample['question']
             answer = sample['answer']
 
+            # temporal windows
             temporal_windows = torch.tensor([sample['start_time'], sample['end_time']]) * self.sample_fps
             temporal_windows = temporal_windows.tolist()
 
