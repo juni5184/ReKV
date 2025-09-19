@@ -9,6 +9,10 @@ from tqdm import tqdm
 import openai
 
 
+# python video_qa/eval/eval_open_ended.py \
+# --pred_path {save_dir}/results.csv \
+# --output_dir {save_dir}/tmp \
+# --output_json {save_dir}/results.json
 def parse_args():
     parser = argparse.ArgumentParser(description="question-answer-generation-using-gpt-3")
     parser.add_argument("--pred_path", required=True, help="The path to file containing prediction.")
@@ -38,9 +42,12 @@ class GPTService:
     def __init__(self):
         self.model_name = "gpt-3.5-turbo-0613"
         self.max_tokens = 300
+        # self.client = openai.OpenAI(
+        #     base_url="",  # TODO
+        #     api_key="",  # TODO
+        # )
         self.client = openai.OpenAI(
-            base_url="",  # TODO
-            api_key="",  # TODO
+            api_key=os.getenv("OPENAI_API_KEY")
         )
 
     def _gpt_response(self, user_prompt):
@@ -173,11 +180,8 @@ def main():
         try:
             # Files that have not been processed yet.
             completed_files = os.listdir(output_dir)
-            print(f"completed_files: {len(completed_files)}")
-
             # Files that have not been processed yet.
             incomplete_files = [f for f in caption_files if f not in completed_files]
-            print(f"incomplete_files: {len(incomplete_files)}")
 
             # Break the loop when there are no incomplete files
             if len(incomplete_files) == 0:
@@ -239,8 +243,8 @@ def main():
     accuracy = yes_count / (yes_count + no_count)
     combined_contents["average_score"] = average_score
     combined_contents["accuracy"] = accuracy
-    print("Yes count:", yes_count)
-    print("No count:", no_count)
+    print(f"Yes count: {yes_count}")
+    print(f"No count: {no_count}")
     print(f"Accuracy: {accuracy*100:.1f}%")
     print(f"Average score: {average_score:.2f}")
     with open(json_path, "w") as json_file:
