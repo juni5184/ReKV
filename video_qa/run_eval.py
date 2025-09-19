@@ -15,11 +15,12 @@ def exec(cmd, sub=False, device=None):
         my_env["CUDA_VISIBLE_DEVICES"] = device
         subprocess.run(cmd, env=my_env)
 
-
+##### MLVU #####
 def eval_mlvu(args):
     num_chunks = args.num_chunks
     save_dir = f"/workspace/ReKV/results/{args.model}/mlvu/{args.retrieve_size}-{args.sample_fps}"
     os.makedirs(save_dir, exist_ok=True)
+    # offline vqa
     solver = "rekv_offline_vqa"
     if not args.only_eval:
         # QA
@@ -153,6 +154,7 @@ def eval_activitynet_qa(args):
     # eval
     exec(f"python video_qa/eval/eval_open_ended.py --pred_path {save_dir}/results.csv --output_dir {save_dir}/tmp --output_json {save_dir}/results.json")
 
+##### RVS Ego #####
 def eval_rvs_ego(args):
     num_chunks = args.num_chunks
     save_dir = f"/workspace/ReKV/results/{args.model}/rvs_ego/{args.retrieve_size}-{args.sample_fps}"
@@ -172,12 +174,14 @@ def eval_rvs_ego(args):
                     "--debug", args.debug,
                     "--num_chunks", str(num_chunks),
                     "--chunk_idx", str(idx)]
+            # multiprocessing
             p = multiprocessing.Process(target=exec, args=(cmd, True, f'{4*idx},{4*idx+1},{4*idx+2},,{4*idx+3}' if args.model=='llava_ov_72b' else str(idx)))  # llava_ov_72b needs 4x 80GB GPUs
             processes.append(p)
             p.start()
         for p in processes:
             p.join()
-        # merge results
+        # Merge results
+        print(f"All processes finished!!!")
         exec(f"> {save_dir}/results.csv")
         exec(f"rm -rf {save_dir}/tmp")
         for idx in range(num_chunks):
@@ -187,6 +191,7 @@ def eval_rvs_ego(args):
             exec(f"rm {save_dir}/{num_chunks}_{idx}.csv")
     # eval
     exec(f"python video_qa/eval/eval_open_ended.py --pred_path {save_dir}/results.csv --output_dir {save_dir}/tmp --output_json {save_dir}/results.json")
+    print(f"Eval finished!!!")
 
 def eval_rvs_movie(args):
     num_chunks = args.num_chunks
