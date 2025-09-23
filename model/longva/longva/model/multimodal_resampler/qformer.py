@@ -36,12 +36,29 @@ from transformers.modeling_outputs import (
     SequenceClassifierOutput,
     TokenClassifierOutput,
 )
-from transformers.modeling_utils import (
-    PreTrainedModel,
-    apply_chunking_to_forward,
-    find_pruneable_heads_and_indices,
-    prune_linear_layer,
-)
+# from transformers.modeling_utils import (
+#     PreTrainedModel,
+#     apply_chunking_to_forward,
+#     find_pruneable_heads_and_indices,
+#     prune_linear_layer,
+# )
+# 안전(버전 호환) 임포트
+from transformers import PreTrainedModel
+
+# HF 4.52+ (신규) 우선, 구버전(<=4.51) 호환 fallback
+try:
+    from transformers.pytorch_utils import (
+        apply_chunking_to_forward,
+        find_pruneable_heads_and_indices,
+        prune_linear_layer,
+    )
+except ImportError:
+    from transformers.modeling_utils import (
+        apply_chunking_to_forward,
+        find_pruneable_heads_and_indices,
+        prune_linear_layer,
+    )
+
 from transformers.utils import logging
 from transformers.models.bert.configuration_bert import BertConfig
 
