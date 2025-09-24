@@ -23,6 +23,10 @@ def eval_mlvu(args):
     # offline vqa
     solver = "rekv_offline_vqa"
     if not args.only_eval:
+        anno_path = "data/mlvu/dev_debug_mc.json"
+        # sample QA for debug
+        if args.sample:
+            anno_path = anno_path.replace("dev_debug_mc", "dev_debug_mc_sample")
         # QA
         processes = []
         for idx in range(0, num_chunks):
@@ -32,7 +36,7 @@ def eval_mlvu(args):
                     "--n_local", str(args.n_local),
                     "--retrieve_size", str(args.retrieve_size),
                     "--save_dir", save_dir,
-                    "--anno_path", "data/mlvu/dev_debug_mc.json",
+                    "--anno_path", anno_path,
                     "--debug", args.debug,
                     "--num_chunks", str(num_chunks),
                     "--chunk_idx", str(idx)]
@@ -41,6 +45,7 @@ def eval_mlvu(args):
             p.start()
         for p in processes:
             p.join()
+        print("Finished QA")
         # merge results
         exec(f"> {save_dir}/results.csv")
         for idx in range(num_chunks):
@@ -273,6 +278,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_local", type=int, default=15000)
     parser.add_argument("--retrieve_size", type=int, default=64)
     parser.add_argument("--debug", type=str, default='false')
+    parser.add_argument("--sample", action="store_true")
     args = parser.parse_args()
     func_dic = {
         'mlvu': eval_mlvu,
