@@ -66,5 +66,13 @@ class Abstract_ReKV:
 
     def calc_memory_usage(self):
         n_layers = len(self.kv_cache)
-        memory = n_layers * self.kv_cache[0].calculate_cpu_memory()
+        # memory = n_layers * self.kv_cache[0].calculate_cpu_memory()
+        # Fix for AttributeError: 'NoneType' object has no attribute 'calculate_cpu_memory'
+        # Filter out None entries in kv_cache before calculating memory
+        valid_kv = [kv for kv in self.kv_cache if kv is not None]
+        if not valid_kv:
+            memory = 0
+        else:
+            n_layers = len(valid_kv)
+            memory = n_layers * valid_kv[0].calculate_cpu_memory()
         return memory
