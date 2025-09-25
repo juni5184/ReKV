@@ -1,6 +1,8 @@
 import torch
 from transformers import LlavaOnevisionProcessor, LlavaOnevisionForConditionalGeneration
 from logzero import logger
+import math
+import torch.nn as nn
 
 from model.patch import patch_hf
 from model.abstract_rekv import Abstract_ReKV
@@ -16,6 +18,20 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
         if mc:
             prompt += 'Best option: ('
         return prompt
+
+    def apply_pooling(self, image_features):
+        height = width = self.config.vision_config.image_size // self.config.vision_config.patch_size
+        batch_frames, seq_len, dim = image_features.shape
+        image_features = image_features.view(batch_frames, height, width, -1)
+        image_features = image_features.permute(0, 3, 1, 2).contiguous()
+
+        height, width = image_features.shape[2:]
+        scaled_shape = [math.ceil(height / 2), math.ceil(width / 2)]
+        image_features = nn.functional.interpolate(image_features, size=scaled_shape, mode="bilinear")
+
+        image_features = image_features.permute(0, 2, 3, 1)
+        image_features = image_features.view(batch_frames, -1, dim)
+        return image_features
 
     def _get_video_features(self, pixel_values_videos):
         batch_size, frames, channels, height, width = pixel_values_videos.shape
@@ -41,60 +57,63 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
         output_ids = []
         stopped = False
 
-        # NOTE: Only input the question to perform retrieval.
+        # NOTE: 0) Only input the question to perform retrieval.
         input_ids = self.processor.tokenizer(input_text['question']).input_ids
         input_ids = torch.as_tensor([input_ids], device=device)
+
+        # NOTE: 1) Activate retrieval mode for kv_cache
         for layer_kv in self.kv_cache:  # activate retrieval mode
-            layer_kv.set_retrieval()
+            if layer_kv is not None:
+                layer_kv.set_retrieval()
 
-        if retrieved_indices is None:  # Internal retrieval
-            out = self.language_model(input_ids=input_ids, use_cache=True, past_key_values=self.kv_cache)
-            past_key_values = out.past_key_values  # Retrieved KV-Cache: L x 2 x (B, h, N, Dh)
-        else:  # External retrieval
+        # NOTE: 2) Internal/External retrieval mode selection
+        if retrieved_indices is not None:
             for layer_kv in self.kv_cache:
-                assert layer_kv.block_size == self.n_frame_tokens, f'block_size: {layer_kv.block_size}, n_frame_tokens: {self.n_frame_tokens}'
-                layer_kv.set_retrieved_block_indices(retrieved_indices)
-            out = self.language_model(input_ids=input_ids, use_cache=True, past_key_values=self.kv_cache)
-            past_key_values = out.past_key_values  # Retrieved KV-Cache: L x 2 x (B, h, N, Dh)
+                if layer_kv is not None:
+                    assert layer_kv.block_size == self.n_frame_tokens, f'block_size: {layer_kv.block_size}, n_frame_tokens: {self.n_frame_tokens}'
+                    layer_kv.set_retrieved_block_indices(retrieved_indices)
 
+        out = self.language_model(input_ids=input_ids, use_cache=True, past_key_values=self.kv_cache)
+        past_key_values = out.past_key_values  # Retrieved KV-Cache: L x 2 x (B, h, N, Dh)
+
+        # NOTE: 3) Off retrieval mode
         for layer_kv in self.kv_cache:  # reset to default
-            layer_kv.reset_retrieval()
+            if layer_kv is not None:
+                layer_kv.reset_retrieval()
 
+        # # 4) 본문 프롬프트 prefill
+        input_ids = self.processor.tokenizer(input_text["prompt"]).input_ids
+        input_ids = torch.as_tensor([input_ids], device=device)
+        inputs_embeds = self.get_input_embeddings()(input_ids)
+        out = self.language_model(inputs_embeds=inputs_embeds, use_cache=True, past_key_values=past_key_values)
+        past_key_values = out.past_key_values
+
+        # 5) 토큰 생성 루프
         for i in range(max_new_tokens):
-            if i == 0:  # prefill
-                input_ids = self.processor.tokenizer(input_text['prompt']).input_ids
-                input_ids = torch.as_tensor([input_ids], device=device)
-                inputs_embeds = self.get_input_embeddings()(input_ids)
-                out = self.language_model(inputs_embeds=inputs_embeds, use_cache=True, past_key_values=past_key_values)
-                past_key_values = out.past_key_values
-                logits = out.logits
-            else:  # decoding
-                out = self.language_model(
-                    input_ids=torch.as_tensor(
-                        [[token]],
-                        device=device,
-                    ),
-                    use_cache=True,
-                    past_key_values=past_key_values,
-                )
-                logits = out.logits
-                past_key_values = out.past_key_values
+            hidden_states = out.last_hidden_state
+            logits = self.lm_head(hidden_states)  # (B=1, T, V)
 
-            last_token_logits = logits[0, -1, :]
-            
-            _, indices = torch.topk(last_token_logits, 2)
-            tokens = [int(index) for index in indices.tolist()]
-            token = tokens[0]
+            # 마지막 토큰 로짓만
+            if logits.dim() == 3:
+                last_token_logits = logits[0, -1, :]
+            elif logits.dim() == 2:
+                last_token_logits = logits[-1, :]
+            else:
+                last_token_logits = logits  # (V,)
 
+            # greedy (원하면 temperature/top-k/top-p 추가)
+            token = int(torch.argmax(last_token_logits))
             output_ids.append(token)
 
-            if token in stop_token_ids:
-                stopped = True
-            else:
-                stopped = False
-
-            if i == max_new_tokens - 1 or stopped:
+            if stop_token_ids and token in stop_token_ids:
                 break
+
+            out = self.language_model(
+                input_ids=torch.as_tensor([[token]], device=device),
+                use_cache=True,
+                past_key_values=past_key_values,
+            )
+            past_key_values = out.past_key_values
 
         output = self.processor.tokenizer.decode(
             output_ids,

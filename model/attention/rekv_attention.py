@@ -25,6 +25,13 @@ def rekv_attention_forward(
     ):
 
         """ 1. Project QKV """
+        # Some upstream callers may pass 2D tensors shaped as (seq_len, hidden_size).
+        # Normalize to (batch, seq_len, hidden_size) by adding a batch dimension if missing.
+        if query.dim() == 2:
+            query = query.unsqueeze(0)
+        if key_value.dim() == 2:
+            key_value = key_value.unsqueeze(0)
+
         batch_size = query.size(0)
         len_q = query.size(1)
         len_k = key_value.size(1)
