@@ -81,19 +81,19 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
             if layer_kv is not None:
                 layer_kv.reset_retrieval()
 
-        # # 4) 본문 프롬프트 prefill
+        # NOTE: 4) 본문 프롬프트 prefill
         input_ids = self.processor.tokenizer(input_text["prompt"]).input_ids
         input_ids = torch.as_tensor([input_ids], device=device)
         inputs_embeds = self.get_input_embeddings()(input_ids)
         out = self.language_model(inputs_embeds=inputs_embeds, use_cache=True, past_key_values=past_key_values)
         past_key_values = out.past_key_values
 
-        # 5) 토큰 생성 루프
+        # NOTE: 5) 토큰 생성 루프
         for i in range(max_new_tokens):
             hidden_states = out.last_hidden_state
             logits = self.lm_head(hidden_states)  # (B=1, T, V)
 
-            # 마지막 토큰 로짓만
+            # NOTE: 마지막 토큰 로짓만
             if logits.dim() == 3:
                 last_token_logits = logits[0, -1, :]
             elif logits.dim() == 2:
@@ -101,7 +101,7 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
             else:
                 last_token_logits = logits  # (V,)
 
-            # greedy (원하면 temperature/top-k/top-p 추가)
+            # NOTE: greedy (원하면 temperature/top-k/top-p 추가)
             token = int(torch.argmax(last_token_logits))
             output_ids.append(token)
 
