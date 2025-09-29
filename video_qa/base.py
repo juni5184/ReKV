@@ -14,10 +14,12 @@ from transformers import (
     LlavaOnevisionForConditionalGeneration, LlavaOnevisionProcessor,
     VideoLlavaForConditionalGeneration, VideoLlavaProcessor
 )
+from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
 import logzero
 from logzero import logger
 
 from model import llava_onevision_rekv, video_llava_rekv, longva_rekv
+from model import qwen2_5_vl_rekv
 
 
 MODELS = {
@@ -48,6 +50,12 @@ MODELS = {
     'longva_7b': {
         'load_func': longva_rekv.load_model,
         'model_path': 'model_zoo/LongVA-7B',
+    },
+    'qwen2_5_vl_3b': {
+        'load_func': qwen2_5_vl_rekv.load_model,
+        'model_class': Qwen2_5_VLForConditionalGeneration,
+        'processor_class': AutoProcessor,
+        'model_path': 'model_zoo/Qwen2.5-VL-3B-Instruct',
     },
 }
 
