@@ -55,6 +55,7 @@ def patch_hf(
     # This approach lacks scalability and will be refactored.
     from transformers import LlamaForCausalLM, MistralForCausalLM, Qwen2ForCausalLM, Qwen2Model
     from transformers.models.llama.modeling_llama import LlamaAttention, LlamaModel, BaseModelOutputWithPast
+    from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VLTextModel
 
     def model_forward(
         self,
@@ -172,12 +173,16 @@ def patch_hf(
         _model = model
         Attention = _model.layers[0].self_attn.__class__
         Model = _model.__class__
+    elif isinstance(model, Qwen2_5_VLTextModel):
+        _model = model
+        Attention = _model.layers[0].self_attn.__class__
+        Model = _model.__class__
     elif model.__class__.__name__ == "MiniCPMForCausalLM":
         _model = model.model
         Attention = _model.layers[0].self_attn.__class__
         Model = _model.__class__
     else:
-        raise ValueError(f"Only supports llama, mistral and qwen2 models, not {model.__class__.__name__}.") 
+        raise ValueError(f"Only supports llama, mistral, qwen2 and qwen2_5_vl models, not {model.__class__.__name__}.") 
     
     hf_rope = _model.rotary_emb
 
