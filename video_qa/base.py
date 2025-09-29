@@ -14,7 +14,7 @@ from transformers import (
     LlavaOnevisionForConditionalGeneration, LlavaOnevisionProcessor,
     VideoLlavaForConditionalGeneration, VideoLlavaProcessor
 )
-from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2_5_VLProcessor
 import logzero
 from logzero import logger
 
@@ -54,7 +54,7 @@ MODELS = {
     'qwen2_5_vl_3b': {
         'load_func': qwen2_5_vl_rekv.load_model,
         'model_class': Qwen2_5_VLForConditionalGeneration,
-        'processor_class': AutoProcessor,
+        'processor_class': Qwen2_5_VLProcessor,
         'model_path': 'model_zoo/Qwen2.5-VL-3B-Instruct',
     },
 }
