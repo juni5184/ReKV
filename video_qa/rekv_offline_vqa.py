@@ -29,51 +29,66 @@ class ReKVOfflineVQA(BaseVQA):
 
     @torch.inference_mode()
     def analyze_a_video(self, video_sample):
-        # load and preprocess video frames for QA
-        video_path = video_sample['video_path']
-        video = self.load_video(video_path)
-        if not isinstance(video, torch.Tensor):
-            video_tensor = torch.from_numpy(video)
-        else:
-            video_tensor = video
+        try:
+            # load and preprocess video frames for QA
+            video_path = video_sample['video_path']
+            video = self.load_video(video_path)
+            if not isinstance(video, torch.Tensor):
+                video_tensor = torch.from_numpy(video)
+            else:
+                video_tensor = video
 
-        self.qa_model.clear_cache()
-        self.qa_model.encode_init_prompt()
-        self.qa_model.encode_video(video_tensor)
+            self.qa_model.clear_cache()
+            self.qa_model.encode_init_prompt()
+            self.qa_model.encode_video(video_tensor)
 
-        for sample in video_sample['conversations']:
-            logger.debug(f'sample: {sample}')
-            question = sample['question']
-            answer = sample['answer']
-            
-            # QA
-            if 'choices' in sample:  # CloseQA
-                choices = sample['choices']
-                if answer is None:  # FIXME: an ugly fix for some benchmarks do not provide GT
-                    answer = choices[0]
-                correct_choice = self.choice_letters[choices.index(answer)]
-                qa_results = self.video_close_qa(question, choices, correct_choice)
-                self.record[(self.retrieve_size, self.chunk_size)].append({
-                    'video_id': video_sample['video_id'],
-                    'question': question,
-                    'choices': choices,
-                    'answer': answer,
-                    'correct_choice': correct_choice,
-                    'pred_answer': qa_results['pred_answer'],
-                    'pred_choice': qa_results['pred_choice'],
-                    'qa_acc': qa_results['acc'] * 100,
-                })
-            else:  # OpenQA
-                qa_results = self.video_open_qa(question)
-                self.record[(self.retrieve_size, self.chunk_size)].append({
-                    'video_id': video_sample['video_id'],
-                    'question': question,
-                    'answer': answer,
-                    'pred_answer': qa_results['pred_answer'],
-                })
+            for conv_idx, sample in enumerate(video_sample['conversations']):
+                try:
+                    logger.debug(f'sample: {sample}')
+                    self.current_conversation = sample
+                    self.current_conversation_idx = conv_idx
+                    
+                    question = sample['question']
+                    answer = sample['answer']
+                    
+                    # QA
+                    if 'choices' in sample:  # CloseQA
+                        choices = sample['choices']
+                        if answer is None:  # FIXME: an ugly fix for some benchmarks do not provide GT
+                            answer = choices[0]
+                        correct_choice = self.choice_letters[choices.index(answer)]
+                        qa_results = self.video_close_qa(question, choices, correct_choice)
+                        self.record[(self.retrieve_size, self.chunk_size)].append({
+                            'video_id': video_sample['video_id'],
+                            'question': question,
+                            'choices': choices,
+                            'answer': answer,
+                            'correct_choice': correct_choice,
+                            'pred_answer': qa_results['pred_answer'],
+                            'pred_choice': qa_results['pred_choice'],
+                            'qa_acc': qa_results['acc'] * 100,
+                        })
+                    else:  # OpenQA
+                        qa_results = self.video_open_qa(question)
+                        self.record[(self.retrieve_size, self.chunk_size)].append({
+                            'video_id': video_sample['video_id'],
+                            'question': question,
+                            'answer': answer,
+                            'pred_answer': qa_results['pred_answer'],
+                        })
 
-            if 'question_type' in sample:
-                self.record[(self.retrieve_size, self.chunk_size)][-1]['task'] = sample['question_type']
+                    if 'question_type' in sample:
+                        self.record[(self.retrieve_size, self.chunk_size)][-1]['task'] = sample['question_type']
+                        
+                except Exception as e:
+                    # conversation 처리 중 에러 발생
+                    self.save_error_info(e, video_sample, sample, conv_idx)
+                    raise e
+                    
+        except Exception as e:
+            # video 전체 처리 중 에러 발생 (video 로딩, 모델 인코딩 등)
+            self.save_error_info(e, video_sample, None, 0)
+            raise e
 
 
 if __name__ == "__main__":

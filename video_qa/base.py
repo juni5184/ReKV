@@ -4,6 +4,8 @@ import json
 import os
 import math
 import argparse
+import traceback
+from datetime import datetime
 
 import pandas as pd
 import torch
@@ -86,6 +88,11 @@ class BaseVQA:
         self.save_dir = save_dir
         self.choice_letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
         self.record = {(self.retrieve_size, self.chunk_size): []}
+        
+        # Error tracking variables
+        self.current_video = None
+        self.current_conversation = None
+        self.current_conversation_idx = 0
 
     def split_list(self, lst, n):
         """Split a list into n (roughly) equal-sized chunks"""
@@ -148,6 +155,55 @@ class BaseVQA:
         else:
             return s[0]
 
+    # NOTE: When an error occurs, save the current video and conversation information in JSON
+    def save_error_info(self, error, video_sample=None, conversation=None, conversation_idx=0):
+        """When an error occurs, save the current video and conversation information in JSON"""
+        error_info = {
+            "timestamp": datetime.now().isoformat(),
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            "traceback": traceback.format_exc(),
+            "video_info": {
+                "video_id": video_sample.get("video_id", "unknown") if video_sample else "unknown",
+                "video_path": video_sample.get("video_path", "unknown") if video_sample else "unknown",
+                "duration": video_sample.get("duration", "unknown") if video_sample else "unknown",
+                "total_conversations": len(video_sample.get("conversations", [])) if video_sample else 0
+            },
+            "conversation_info": {
+                "conversation_index": conversation_idx,
+                "conversation": conversation
+            },
+            "processing_info": {
+                "chunk_idx": self.chunk_idx,
+                "num_chunks": self.num_chunks,
+                "retrieve_size": self.retrieve_size,
+                "chunk_size": self.chunk_size
+            }
+        }
+        
+        # Save error information to a single JSON file (error_info.json) (append)
+        error_file = os.path.join(self.save_dir, "error_info.json")
+        if os.path.exists(error_file):
+            with open(error_file, 'r', encoding='utf-8') as f:
+                try:
+                    error_list = json.load(f)
+                    if not isinstance(error_list, list):
+                        error_list = [error_list]
+                except Exception:
+                    error_list = []
+        else:
+            error_list = []
+        error_list.append(error_info)
+        with open(error_file, 'w', encoding='utf-8') as f:
+            json.dump(error_list, f, indent=2, ensure_ascii=False)
+        
+        logger.error(f"Error occurred and saved to: {error_file}")
+        logger.error(f"Video ID: {error_info['video_info']['video_id']}")
+        logger.error(f"Conversation Index: {conversation_idx}")
+        logger.error(f"Error: {error_info['error_message']}")
+        
+        return error_file
+
     def video_open_qa(self, question, max_new_tokens=1024):
         pass
 
@@ -161,8 +217,13 @@ class BaseVQA:
     def analyze(self, debug=False):
         video_annos = self.anno[:1] if debug else self.anno
         for video_sample in tqdm(video_annos):
-            logger.debug(f'video_id: {video_sample["video_id"]}')
-            self.analyze_a_video(video_sample)
+            try:
+                logger.debug(f'video_id: {video_sample["video_id"]}')
+                self.current_video = video_sample
+                self.analyze_a_video(video_sample)
+            except Exception as e:
+                self.save_error_info(e, video_sample, None, 0)
+                raise e
 
         dfs = []
         for (retrieve_size, chunk_size), dict_list in self.record.items():
