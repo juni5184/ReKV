@@ -1,18 +1,14 @@
 import torch
 from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2_5_VLProcessor
-from qwen_vl_utils import process_vision_info
 from logzero import logger
     
-import math
-import torch.nn as nn
 from model.patch import patch_hf
 from model.abstract_rekv import Abstract_ReKV
 
 
 class Qwen2_5_VL_ReKV(Qwen2_5_VLForConditionalGeneration, Abstract_ReKV):
-    def __init__(self, config):#, processor, n_frame_tokens, init_prompt_ids, n_local, topk, chunk_size):
+    def __init__(self, config):
         Qwen2_5_VLForConditionalGeneration.__init__(self, config)
-        # Abstract_ReKV.__init__(self, processor, n_frame_tokens, init_prompt_ids, n_local, topk, chunk_size)
 
     def get_prompt(self, query, mc=False):
         prompt =  f"\n{query}<|im_end|><|im_start|>assistant\n"
@@ -27,11 +23,9 @@ class Qwen2_5_VL_ReKV(Qwen2_5_VLForConditionalGeneration, Abstract_ReKV):
         n_local=15000, topk=64, chunk_size=2,
         **kwargs
     ):
-        # 1) HF 모델만 먼저 안전하게 로드 (여기 kwargs는 GenerationConfig에 넘어가도 안전해야 함)
         model = super().from_pretrained(
             pretrained_model_name_or_path, *model_args, **kwargs
         )
-        # 2) Abstract_ReKV 초기화 (가중치 로드 이후 내부 상태/버퍼만 구성)
         Abstract_ReKV.__init__(
             model,
             processor=processor,
@@ -53,29 +47,27 @@ class Qwen2_5_VL_ReKV(Qwen2_5_VLForConditionalGeneration, Abstract_ReKV):
         
     def _encode_video_chunk(self, video_chunk):
         frames = video_chunk
-        # 1) 텐서 → HWC, uint8
+        # 1) Tensor -> HWC, uint8
         if isinstance(frames, torch.Tensor):
             if frames.ndim != 4:
                 raise ValueError(f"Expected 4D video tensor, got {frames.shape}")
 
             # (N,3,H,W) -> (N,H,W,3)
             if frames.shape[1] == 3 and frames.shape[-1] != 3:
-                frames = frames.permute(0, 2, 3, 1)  # NHWC
+                frames = frames.permute(0, 2, 3, 1)
 
-            # float → uint8
+            # float → uint8 [0,255]
             if frames.dtype != torch.uint8:
-                # [0,1]로 추정 시 스케일업
                 if torch.is_floating_point(frames) and frames.max() <= 1.0:
                     frames = frames * 255.0
                 frames = frames.round().clamp(0, 255).to(torch.uint8)
-
             frames_np = frames.cpu().numpy()  # (N,H,W,3), uint8
-            frames_list = [f for f in frames_np]   # 리스트[np.ndarray(H,W,3)]
+            frames_list = [f for f in frames_np]   # List[np.ndarray(H,W,3)]
         else:
-            # 이미 리스트[np.ndarray(H,W,3)]라 가정
+            # If already List[np.ndarray(H,W,3)]
             frames_list = frames
 
-        # 2) extreme aspect ratio 가드(선택)
+        # 2) extreme aspect ratio guard(optional)
         # 200.0 is the default value in Qwen2.5VL
         safe = []
         for img in frames_list:
@@ -92,14 +84,13 @@ class Qwen2_5_VL_ReKV(Qwen2_5_VLForConditionalGeneration, Abstract_ReKV):
         out = self.processor.video_processor(safe, return_tensors="pt")
         pixel_values_videos = out.pixel_values_videos.to(self.device, self.dtype)  # (1, Nv, 3, H, W)
 
-        # (추가) grid_thw 꺼내기 — BatchFeature는 속성/키 접근 모두 가능
+        # (추가) grid_thw Extract — BatchFeature has both attributes and key access
         video_grid_thw = (
             getattr(out, "video_grid_thw", None)
             if hasattr(out, "video_grid_thw")
             else out.get("video_grid_thw", None)
         )
         if video_grid_thw is None:
-            # defense for possible different key names (old version etc.)
             video_grid_thw = (
                 getattr(out, "grid_thw", None)
                 if hasattr(out, "grid_thw")
@@ -108,7 +99,6 @@ class Qwen2_5_VL_ReKV(Qwen2_5_VLForConditionalGeneration, Abstract_ReKV):
         if video_grid_thw is None:
             raise ValueError("video_grid_thw is missing from processor output.")
 
-        # tensorize + device align
         if not isinstance(video_grid_thw, torch.Tensor):
             video_grid_thw = torch.as_tensor(video_grid_thw)
         video_grid_thw = video_grid_thw.to(self.device)
@@ -117,7 +107,7 @@ class Qwen2_5_VL_ReKV(Qwen2_5_VLForConditionalGeneration, Abstract_ReKV):
         # tuple -> tensor
         if isinstance(video_features, tuple):
             video_features = video_features[0]
-        # 2D → (1, S, H)
+        # 2D -> (1, S, H)
         if video_features.dim() == 2:
             video_features = video_features.unsqueeze(0)
 
@@ -126,10 +116,10 @@ class Qwen2_5_VL_ReKV(Qwen2_5_VLForConditionalGeneration, Abstract_ReKV):
         
         attention_mask = video_features.new_ones((B, S), dtype=torch.long)
 
-        # 2) _encode_video_chunk: block align (128 multiple) padding + mask pass
-        rem = S % self.n_frame_tokens  # 128
+        # 2) _encode_video_chunk: block align padding + mask pass
+        rem = S % self.n_frame_tokens 
         if rem != 0:
-            pad_len = self.n_frame_tokens - rem               # ex) 13
+            pad_len = self.n_frame_tokens - rem
             pad_embed = video_features.new_zeros((B, pad_len, H))
             video_features = torch.cat([video_features, pad_embed], dim=1)
             pad_mask = attention_mask.new_zeros((B, pad_len))
@@ -152,47 +142,46 @@ class Qwen2_5_VL_ReKV(Qwen2_5_VLForConditionalGeneration, Abstract_ReKV):
     def question_answering(self, input_text, max_new_tokens=128, retrieved_indices=None):
         device = self.device
         stop_token_ids = [self.processor.tokenizer.eos_token_id]
-
         output_ids = []
-        stopped = False
 
-        # NOTE: 0) Only input the question to perform retrieval.
+        # 0) Only input the question to perform retrieval.
         input_ids = self.processor.tokenizer(input_text['question']).input_ids
         input_ids = torch.as_tensor([input_ids], device=device)
 
-        # NOTE: 1) Activate retrieval mode for kv_cache
+        # 1) Activate retrieval mode for kv_cache
         for layer_kv in self.kv_cache:  # activate retrieval mode
             if layer_kv is not None:
                 layer_kv.set_retrieval()
 
-        # NOTE: 2) Internal/External retrieval mode selection
+        # 2) Internal/External retrieval mode selection
         if retrieved_indices is not None:
             for layer_kv in self.kv_cache:
                 if layer_kv is not None:
-                    assert layer_kv.block_size == self.n_frame_tokens, f'block_size: {layer_kv.block_size}, n_frame_tokens: {self.n_frame_tokens}'
+                    assert layer_kv.block_size == self.n_frame_tokens, \
+                        f'block_size: {layer_kv.block_size}, n_frame_tokens: {self.n_frame_tokens}'
                     layer_kv.set_retrieved_block_indices(retrieved_indices)
 
         out = self.language_model(input_ids=input_ids, use_cache=True, past_key_values=self.kv_cache)
         past_key_values = out.past_key_values  # Retrieved KV-Cache: L x 2 x (B, h, N, Dh)
 
-        # NOTE: 3) Off retrieval mode
+        # 3) Off retrieval mode
         for layer_kv in self.kv_cache:  # reset to default
             if layer_kv is not None:
                 layer_kv.reset_retrieval()
 
-        # NOTE: 4) Prompt prefill
+        # 4) Prompt prefill
         input_ids = self.processor.tokenizer(input_text["prompt"]).input_ids
         input_ids = torch.as_tensor([input_ids], device=device)
         inputs_embeds = self.get_input_embeddings()(input_ids)
         out = self.language_model(inputs_embeds=inputs_embeds, use_cache=True, past_key_values=past_key_values)
         past_key_values = out.past_key_values
 
-        # NOTE: 5) Token generation loop
+        # 5) Token generation loop
         for i in range(max_new_tokens):
             hidden_states = out.last_hidden_state
             logits = self.lm_head(hidden_states)  # (B=1, T, V)
 
-            # NOTE: Last token logits only
+            # Last token logits only
             if logits.dim() == 3:
                 last_token_logits = logits[0, -1, :]
             elif logits.dim() == 2:
@@ -200,7 +189,7 @@ class Qwen2_5_VL_ReKV(Qwen2_5_VLForConditionalGeneration, Abstract_ReKV):
             else:
                 last_token_logits = logits  # (V,)
 
-            # NOTE: greedy (add temperature/top-k/top-p if desired)
+            # greedy (add temperature/top-k/top-p if desired)
             token = int(torch.argmax(last_token_logits))
             output_ids.append(token)
 
