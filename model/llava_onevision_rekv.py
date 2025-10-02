@@ -33,6 +33,24 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
         image_features = image_features.view(batch_frames, -1, dim)
         return image_features
 
+
+    """
+    Obtains video last hidden states from the vision tower, apply multimodal projection and pooling.
+
+    Args:
+        pixel_values (`torch.FloatTensor]` of shape `(batch_size, num_frames, channels, height, width)`)
+            The tensors corresponding to the input video.
+        vision_feature_layer (`Union[int, list[int]], *optional*, defaults to -2`):
+            The index of the layer to select the vision feature. If multiple indices are provided,
+            the vision feature of the corresponding indices will be concatenated to form the
+            vision features.
+        vision_feature_select_strategy (`str`):
+            The feature selection strategy used to select the vision feature from the vision backbone.
+            Can be one of `"default"` or `"full"`
+    Returns:
+        video_features (list[`torch.Tensor`]): List of video feature tensor, each contains all the visual feature of all patches
+        and are of shape `(num_videos, video_length, embed_dim)`).
+    """
     def _get_video_features(self, pixel_values_videos):
         batch_size, frames, channels, height, width = pixel_values_videos.shape
         pixel_values_videos = pixel_values_videos.view(batch_size * frames, channels, height, width)
@@ -46,7 +64,8 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
         video_features = self.multi_modal_projector(selected_video_feature)
 
         video_features = self.apply_pooling(video_features)
-        video_features = video_features.reshape(batch_size, frames * video_features.shape[1], -1)  # (B, Nv*196, D)
+        # (num_videos, video_length, embed_dim) -> (B, Nv*196, D)
+        video_features = video_features.reshape(batch_size, frames * video_features.shape[1], -1)
         return video_features
 
     @torch.inference_mode()
