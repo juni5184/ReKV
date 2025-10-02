@@ -25,8 +25,8 @@ def eval_mlvu(args):
     if not args.only_eval:
         anno_path = "data/mlvu/dev_debug_mc.json"
         # sample QA for debug
-        if args.sample:
-            anno_path = anno_path.replace("dev_debug_mc", "dev_debug_mc_sample")
+        if args.sample is not None:
+            anno_path = anno_path.replace("dev_debug_mc", f"dev_debug_mc_sample_{args.sample}")
         # QA
         processes = []
         for idx in range(0, num_chunks):
@@ -278,7 +278,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_local", type=int, default=15000)
     parser.add_argument("--retrieve_size", type=int, default=64)
     parser.add_argument("--debug", type=str, default='false')
-    parser.add_argument("--sample", action="store_true")
+    parser.add_argument("--sample", type=int, default=None, choices=[10, 150, "error", "normal"])
     args = parser.parse_args()
     func_dic = {
         'mlvu': eval_mlvu,
