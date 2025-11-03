@@ -25,7 +25,7 @@ MODELS = {
         'load_func': llava_onevision_rekv.load_model,
         'model_class': LlavaOnevisionForConditionalGeneration,
         'processor_class': LlavaOnevisionProcessor,
-        'model_path': 'model_zoo/llava-onevision-qwen2-0.5b-ov-hf',
+        'model_path': '/scratch2/juni5184/model_zoo/llava-onevision-qwen2-0.5b-ov-hf',
     },
     'llava_ov_7b': {
         'load_func': llava_onevision_rekv.load_model,
@@ -89,6 +89,12 @@ class BaseVQA:
         return chunks[k]
 
     def load_video(self, video_path):
+        if 'mlvu' in video_path:
+            video_path = video_path.replace('data/mlvu/videos', '/scratch2/juni5184/datasets/MVLU/MLVU/video')
+        elif 'qaego4d' in video_path:
+            video_path = video_path.replace('data/qaego4d/videos', '/scratch2/juni5184/datasets/QAEgo4D-MC-test/videos')
+        else:
+            raise ValueError(f'Invalid video path: {video_path}')
         vr = VideoReader(video_path, ctx=cpu(0))
         fps = round(vr.get_avg_fps())
         frame_idx = [i for i in range(0, len(vr), int(fps / self.sample_fps))]
