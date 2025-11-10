@@ -31,6 +31,7 @@ def eval_mlvu(args):
                     "--retrieve_size", str(args.retrieve_size),
                     "--save_dir", save_dir,
                     "--anno_path", "data/mlvu/dev_debug_mc.json",
+                    # "--anno_path", "data/mlvu/dev_debug_mc_sample.json",
                     "--debug", args.debug,
                     "--num_chunks", str(num_chunks),
                     "--chunk_idx", str(idx)]
@@ -64,6 +65,7 @@ def eval_qaego4d(args):
                     "--retrieve_size", str(args.retrieve_size),
                     "--save_dir", save_dir,
                     "--anno_path", "data/qaego4d/test_mc.json",
+                    # "--anno_path", "data/qaego4d/test_mc_sample.json",
                     "--debug", args.debug,
                     "--num_chunks", str(num_chunks),
                     "--chunk_idx", str(idx)]
