@@ -1,7 +1,7 @@
-import math
 import torch
-from typing import Optional, Tuple
+import json
 
+from typing import Optional, Tuple
 from .dot_production_attention import get_multi_stage_dot_production_attention
 
 
@@ -326,13 +326,15 @@ class ContextManager:
 
         self.initialized = True
 
-    def set_retrieval(self):
+    def set_retrieval(self, uniform_sampling=False):
         self.to_retrieve = True
+        self.uniform_sampling = uniform_sampling
 
     def reset_retrieval(self):
         self.similarity = None
         self.retrieved_block_indices = None
         self.to_retrieve = False
+        self.uniform_sampling = False
 
     def set_retrieved_block_indices(self, retrieved_block_indices):
         # retrieved_block_indices (list): batch_size x n_frames
@@ -345,10 +347,13 @@ class ContextManager:
         query: (batch_size, num_heads, length, dim_head)
         return [init_k, retrieved_k] and the respective v
         """
-
         if query is not None:  # retrieve based on the attention score between query and context's representative keys
-            block_topk = self._calc_block_topk(query)
-            self.set_retrieved_block_indices(block_topk)
+            if self.uniform_sampling:
+                block_topk = self._calc_block_uniform()
+                self.set_retrieved_block_indices(block_topk)
+            else:
+                block_topk = self._calc_block_topk(query)
+                self.set_retrieved_block_indices(block_topk)
 
         assert len(self.retrieved_block_indices) == self.num_units
 
@@ -465,6 +470,111 @@ class ContextManager:
             for u in range(self.num_units):
                 ret[u] = list(filter(lambda idx: idx < logits.shape[1], ret[u]))
 
+        output_json_path = "ret_internal_log.json"
+        log_data = {
+            "total_blocks(frames_num)": self.num_global_block,
+            "topk(retrieve_size)": self.topk,
+            "retrieved_block_indices": len(ret),
+            "retrieved_block_indices_list": ret
+        }
+        try:
+            with open(output_json_path, "a", encoding="utf-8") as f:
+                json.dump(log_data, f, ensure_ascii=False)
+                f.write('\n')
+        except Exception as e:
+            print(f"Failed to write ret to json: {e}")
+        return ret
+
+    # Get uniformly sampled block indices
+    # ret: batch_size x topk
+    def _calc_block_uniform(self):
+        """Calculate uniformly spaced block indices for uniform sampling."""
+        total_blocks = self.num_global_block
+
+        if total_blocks == 0:
+            return [[0] * self.topk for _ in range(self.num_units)]
+
+        if total_blocks <= self.topk:
+            # Return all blocks
+            ret = [list(range(total_blocks)) for _ in range(self.num_units)]
+            # Pad with last index if needed
+            if total_blocks < self.topk:
+                for u in range(self.num_units):
+                    ret[u] = ret[u] + [ret[u][-1]] * (self.topk - len(ret[u]))
+        else:
+            # Uniform sampling: evenly space topk indices across total_blocks
+            if self.topk > 1:
+                indices = [int(round(i * (total_blocks - 1) / (self.topk - 1))) for i in range(self.topk)]
+            else:
+                indices = [total_blocks // 2]  # Middle block if only one
+            ret = [indices for _ in range(self.num_units)] # len(ret) = 64
+        
+        # Handle chunk_size if needed (similar to _calc_block_topk)
+        if self.chunk_size > 1 and self.topk % self.chunk_size == 0:
+            num_chunks_needed = self.topk // self.chunk_size
+            total_chunks = total_blocks // self.chunk_size
+            remainder_size = total_blocks % self.chunk_size
+            
+            chunked_ret = []
+            for u in range(self.num_units):
+                # Calculate uniformly sampled chunk indices
+                if total_chunks <= num_chunks_needed:
+                    # Not enough chunks, return all chunks and expand
+                    selected_chunk_indices = list(range(total_chunks))
+                    if remainder_size > 0:
+                        # Include the remainder as an extra chunk
+                        if len(selected_chunk_indices) < num_chunks_needed:
+                            selected_chunk_indices.append(total_chunks)  # This represents the remainder chunk
+                else:
+                    # Uniformly sample chunks
+                    if num_chunks_needed > 1:
+                        selected_chunk_indices = [int(round(i * (total_chunks - 1) / (num_chunks_needed - 1))) for i in range(num_chunks_needed)]
+                    else:
+                        selected_chunk_indices = [total_chunks // 2]
+                
+                # Expand each selected chunk to get block indices
+                expanded_indices = []
+                for chunk_idx in selected_chunk_indices[:num_chunks_needed]:
+                    if chunk_idx < total_chunks:
+                        # Normal chunk: expand to all blocks in this chunk
+                        chunk_start = chunk_idx * self.chunk_size
+                        chunk_end = min(chunk_start + self.chunk_size, total_blocks)
+                        expanded_indices.extend(range(chunk_start, chunk_end))
+                    else:
+                        # Remainder chunk
+                        chunk_start = total_chunks * self.chunk_size
+                        expanded_indices.extend(range(chunk_start, total_blocks))
+                
+                # Ensure we have exactly topk indices (pad if needed)
+                expanded_indices = expanded_indices[:self.topk]
+                if len(expanded_indices) < self.topk:
+                    if expanded_indices:
+                        expanded_indices.extend([expanded_indices[-1]] * (self.topk - len(expanded_indices)))
+                    else:
+                        expanded_indices = [0] * self.topk
+                
+                chunked_ret.append(expanded_indices)
+            ret = chunked_ret
+
+        for u in range(self.num_units):
+            ret[u] = [idx for idx in ret[u]]
+            if ret[u] and ret[u][-1] > total_blocks - 1:
+                ret[u] = ret[u][:-1]
+                if ret[u] and ret[u][-1] > total_blocks - 1:
+                    ret[u] = ret[u][:-1]
+        output_json_path = "ret_uniform_log.json"
+        log_data = {
+            "total_blocks(frames_num)": total_blocks,
+            "topk(retrieve_size)": self.topk,
+            "retrieved_block_indices": len(ret),
+            "retrieved_block_indices_list": ret
+        }
+        try:
+            with open(output_json_path, "a", encoding="utf-8") as f:
+                json.dump(log_data, f, ensure_ascii=False)
+                f.write('\n')
+        except Exception as e:
+            print(f"Failed to write ret to json: {e}")
         return ret
 
     # load init KV
