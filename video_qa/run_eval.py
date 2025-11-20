@@ -30,8 +30,8 @@ def eval_mlvu(args):
                     "--n_local", str(args.n_local),
                     "--retrieve_size", str(args.retrieve_size),
                     "--save_dir", save_dir,
-                    "--anno_path", "data/mlvu/dev_debug_mc.json",
-                    # "--anno_path", "data/mlvu/dev_debug_mc_sample.json",
+                    # "--anno_path", "data/mlvu/dev_debug_mc.json",
+                    "--anno_path", "data/mlvu/dev_debug_mc_sample.json",
                     "--debug", args.debug,
                     "--num_chunks", str(num_chunks),
                     "--chunk_idx", str(idx)]

@@ -30,7 +30,7 @@ class ReKVOfflineVQA(BaseVQA):
         }
 
     @torch.inference_mode()
-    def analyze_a_video(self, video_sample, uniform_sampling_mode=False):
+    def analyze_a_video(self, video_sample, uniform_sampling_mode=False): # True for ReKV, False for Baseline 
         # load and preprocess video frames for QA
         video_path = video_sample['video_path']
         video = self.load_video(video_path)
