@@ -16,12 +16,25 @@ def huggingface_forward(forward):
         **kwargs,
     ):
         assert not output_attentions
+        num_heads = getattr(self, "num_heads", None)
+        num_key_value_heads = getattr(self, "num_key_value_heads", None)
+        head_dim = getattr(self, "head_dim", None)
+
+        if head_dim is None and hasattr(self, "config"):
+            head_dim = self.config.hidden_size // self.config.num_attention_heads
+        if num_heads is None and hasattr(self, "config"):
+            num_heads = self.config.num_attention_heads
+        if num_key_value_heads is None and hasattr(self, "config"):
+            num_key_value_heads = self.config.num_key_value_heads
+
         ret = forward(
             self, hidden_states, hidden_states,
             position_ids, use_cache, past_key_value,
             self.q_proj, self.k_proj, self.v_proj, self.o_proj, 
-            self.head_dim, self.num_heads, self.num_key_value_heads
+        #     self.head_dim, self.num_heads, self.num_key_value_heads
+            head_dim, num_heads, num_key_value_heads
         )
+
         if use_cache:
             o, pkv = ret
         else:
@@ -134,36 +147,47 @@ def patch_hf(
     forward = huggingface_forward(rekv_attention_forward(**attn_kwargs))
 
     if isinstance(model, LlamaForCausalLM):
-        Attention = model.model.layers[0].self_attn.__class__
-        Model = model.model.__class__
+        _model = model.model
+        Attention = _model.layers[0].self_attn.__class__
+        Model = _model.__class__
     elif isinstance(model, MistralForCausalLM):
-        Attention = model.model.layers[0].self_attn.__class__
-        Model = model.model.__class__
+        _model = model.model
+        Attention = _model.layers[0].self_attn.__class__
+        Model = _model.__class__
     elif isinstance(model, Qwen2ForCausalLM) or isinstance(model, Qwen2Model):
-        Attention = model.model.layers[0].self_attn.__class__
-        Model = model.model.__class__
+        _model = model.model
+        Attention = _model.layers[0].self_attn.__class__
+        Model = _model.__class__
     elif model.__class__.__name__ == "MiniCPMForCausalLM":
-        Attention = model.model.layers[0].self_attn.__class__
-        Model = model.model.__class__
+        _model = model.model
+        Attention = _model.layers[0].self_attn.__class__
+        Model = _model.__class__
     else:
         raise ValueError(f"Only supports llama, mistral and qwen2 models, not {model.__class__.__name__}.")
 
-    hf_rope = model.model.layers[0].self_attn.rotary_emb 
-    if isinstance(hf_rope, Qwen2RotaryEmbedding):
-        base = hf_rope.base
-        distance_scale = 1.0
-        dim = hf_rope.dim
-    else:
-        base = hf_rope.config.rope_theta
-        distance_scale = distance_scale if distance_scale is not None else 1.0
-        partial_rotary_factor = hf_rope.config.partial_rotary_factor if hasattr(hf_rope.config, "partial_rotary_factor") else 1.0
-        dim = int((hf_rope.config.hidden_size // hf_rope.config.num_attention_heads) * partial_rotary_factor)
+    # hf_rope = _model.layers[0].self_attn.rotary_emb 
+    # if isinstance(hf_rope, Qwen2RotaryEmbedding):
+    #     base = hf_rope.base
+    #     distance_scale = 1.0
+    #     dim = hf_rope.dim
+    # else:
+    #     base = hf_rope.config.rope_theta
+    #     distance_scale = distance_scale if distance_scale is not None else 1.0
+    #     partial_rotary_factor = hf_rope.config.partial_rotary_factor if hasattr(hf_rope.config, "partial_rotary_factor") else 1.0
+    #     dim = int((hf_rope.config.hidden_size // hf_rope.config.num_attention_heads) * partial_rotary_factor)
+
+    hf_rope = _model.rotary_emb
+    base = hf_rope.config.rope_theta
+    distance_scale = distance_scale if distance_scale is not None else 1.0
+    partial_rotary_factor = hf_rope.config.partial_rotary_factor if hasattr(hf_rope.config, "partial_rotary_factor") else 1.0
+    dim = int((hf_rope.config.hidden_size // hf_rope.config.num_attention_heads) * partial_rotary_factor)
+
     rope = RotaryEmbeddingESM(
         dim,
         base,
         distance_scale
     )
-    model.model.position_bias = rope
+    _model.position_bias = rope
 
     def set_forward(m):
         if isinstance(m, Attention):
@@ -172,7 +196,7 @@ def patch_hf(
 
     model.apply(set_forward)
 
-    model.model._old_forward = model.model.forward
-    model.model.forward = model_forward.__get__(model.model, Model)
+    _model._old_forward = _model.forward
+    _model.forward = model_forward.__get__(_model, Model)
 
     return model
