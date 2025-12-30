@@ -17,39 +17,7 @@ from transformers import (
 import logzero
 from logzero import logger
 
-from model import llava_onevision_rekv, video_llava_rekv, longva_rekv
-
-
-MODELS = {
-    'llava_ov_0.5b': {
-        'load_func': llava_onevision_rekv.load_model,
-        'model_class': LlavaOnevisionForConditionalGeneration,
-        'processor_class': LlavaOnevisionProcessor,
-        'model_path': '/scratch2/juni5184/model_zoo/llava-onevision-qwen2-0.5b-ov-hf',
-    },
-    'llava_ov_7b': {
-        'load_func': llava_onevision_rekv.load_model,
-        'model_class': LlavaOnevisionForConditionalGeneration,
-        'processor_class': LlavaOnevisionProcessor,
-        'model_path': '/scratch2/juni5184/model_zoo/llava-onevision-qwen2-7b-ov-hf',
-    },
-    'llava_ov_72b': {
-        'load_func': llava_onevision_rekv.load_model,
-        'model_class': LlavaOnevisionForConditionalGeneration,
-        'processor_class': LlavaOnevisionProcessor,
-        'model_path': 'model_zoo/llava-onevision-qwen2-72b-ov-hf',
-    },
-    'video_llava_7b': {
-        'load_func': video_llava_rekv.load_model,
-        'model_class': VideoLlavaForConditionalGeneration,
-        'processor_class': VideoLlavaProcessor,
-        'model_path': 'model_zoo/Video-LLaVA-7B-hf',
-    },
-    'longva_7b': {
-        'load_func': longva_rekv.load_model,
-        'model_path': 'model_zoo/LongVA-7B',
-    },
-}
+from model import llava_onevision_rekv
 
 
 class BaseVQA:
@@ -89,12 +57,6 @@ class BaseVQA:
         return chunks[k]
 
     def load_video(self, video_path):
-        if 'mlvu' in video_path:
-            video_path = video_path.replace('data/mlvu/videos', '/scratch2/juni5184/datasets/MVLU/MLVU/video')
-        elif 'qaego4d' in video_path:
-            video_path = video_path.replace('data/qaego4d/videos', '/scratch2/juni5184/datasets/QAEgo4D-MC-test/videos')
-        else:
-            raise ValueError(f'Invalid video path: {video_path}')
         vr = VideoReader(video_path, ctx=cpu(0))
         fps = round(vr.get_avg_fps())
         frame_idx = [i for i in range(0, len(vr), int(fps / self.sample_fps))]
@@ -145,9 +107,6 @@ class BaseVQA:
             return pred
         else:
             return s[0]
-
-    def video_open_qa(self, question, max_new_tokens=1024):
-        pass
 
     def video_close_qa(self, question, candidates, correct_choice):
         pass
@@ -209,10 +168,16 @@ def work(QA_CLASS):
     logger.info('seed: 2024')
 
     # VideoQA model
-    model_path = MODELS[args.model]['model_path']
-    load_func = MODELS[args.model]['load_func']
-    logger.info(f"Loading VideoQA model: {model_path}")
-    videoqa_model, videoqa_processor = load_func(
+    model_path = None
+    if args.model == 'llava_ov_7b':
+        model_path = '/scratch2/juni5184/model_zoo/llava-onevision-qwen2-7b-ov-hf'
+    elif args.model == 'llava_ov_0.5b':
+        model_path = '/scratch2/juni5184/model_zoo/llava-onevision-qwen2-0.5b-ov-hf'
+    else:
+        raise ValueError(f"Invalid model: {args.model}")
+    assert model_path is not None, f"Invalid model: {args.model}"
+        
+    videoqa_model, videoqa_processor = llava_onevision_rekv.load_model(
         model_path=model_path,
         n_local=args.n_local,
         topk=args.retrieve_size,

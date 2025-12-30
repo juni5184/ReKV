@@ -5,22 +5,9 @@ from video_qa.base import BaseVQA, work
 
 
 class ReKVOfflineVQA(BaseVQA):
-    def video_open_qa(self, question, max_new_tokens=1024, retrieved_indices=None, uniform_sampling=False):
-        input_text = {
-            "question": question,
-            "prompt": self.qa_model.get_prompt(question),
-            "uniform_sampling": uniform_sampling
-        }
-
-        pred_answer = self.qa_model.question_answering(input_text, max_new_tokens=max_new_tokens, retrieved_indices=retrieved_indices)
-
-        return {
-            'pred_answer': pred_answer.replace('\n', ''),
-        }
-
-    def video_close_qa(self, question, candidates, correct_choice, retrieved_indices=None, uniform_sampling=False):
+    # MLVU, QAego4D
+    def video_close_qa(self, question, candidates, correct_choice, retrieved_indices=None):
         input_text = self.format_mcqa_prompt(question, candidates)
-        input_text["uniform_sampling"] = uniform_sampling
         pred_answer = self.qa_model.question_answering(input_text, max_new_tokens=16, retrieved_indices=retrieved_indices)
         pred_letter = self.extract_characters_regex(pred_answer)
         return {
@@ -30,9 +17,10 @@ class ReKVOfflineVQA(BaseVQA):
         }
 
     @torch.inference_mode()
-    def analyze_a_video(self, video_sample, uniform_sampling_mode=False): # True for ReKV, False for Baseline 
+    def analyze_a_video(self, video_sample):
         # load and preprocess video frames for QA
         video_path = video_sample['video_path']
+        video_path = video_path.replace('data', '/scratch2/juni5184/datasets')
         video = self.load_video(video_path)
         if not isinstance(video, torch.Tensor):
             video_tensor = torch.from_numpy(video)
@@ -54,7 +42,7 @@ class ReKVOfflineVQA(BaseVQA):
                 if answer is None:  # FIXME: an ugly fix for some benchmarks do not provide GT
                     answer = choices[0]
                 correct_choice = self.choice_letters[choices.index(answer)]
-                qa_results = self.video_close_qa(question, choices, correct_choice, uniform_sampling=uniform_sampling_mode)
+                qa_results = self.video_close_qa(question, choices, correct_choice)
                 self.record[(self.retrieve_size, self.chunk_size)].append({
                     'video_id': video_sample['video_id'],
                     'question': question,
@@ -64,14 +52,6 @@ class ReKVOfflineVQA(BaseVQA):
                     'pred_answer': qa_results['pred_answer'],
                     'pred_choice': qa_results['pred_choice'],
                     'qa_acc': qa_results['acc'] * 100,
-                })
-            else:  # OpenQA
-                qa_results = self.video_open_qa(question, uniform_sampling=uniform_sampling_mode)
-                self.record[(self.retrieve_size, self.chunk_size)].append({
-                    'video_id': video_sample['video_id'],
-                    'question': question,
-                    'answer': answer,
-                    'pred_answer': qa_results['pred_answer'],
                 })
 
             if 'question_type' in sample:

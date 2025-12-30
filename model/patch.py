@@ -31,7 +31,6 @@ def huggingface_forward(forward):
             self, hidden_states, hidden_states,
             position_ids, use_cache, past_key_value,
             self.q_proj, self.k_proj, self.v_proj, self.o_proj, 
-        #     self.head_dim, self.num_heads, self.num_key_value_heads
             head_dim, num_heads, num_key_value_heads
         )
 
@@ -47,16 +46,14 @@ def huggingface_forward(forward):
 
 
 def patch_hf(
-    model,
+    model, # language model
     attn_kwargs: dict = {},
     base = None, 
     distance_scale = None,
     **kwargs
 ):
     attn_kwargs.update(kwargs)
-    # This approach lacks scalability and will be refactored.
-    from transformers import LlamaForCausalLM, MistralForCausalLM, Qwen2ForCausalLM, Qwen2Model
-    from transformers.models.llama.modeling_llama import LlamaAttention, LlamaModel, BaseModelOutputWithPast
+    from transformers.models.llama.modeling_llama import BaseModelOutputWithPast
 
     def model_forward(
         self,
@@ -145,38 +142,17 @@ def patch_hf(
         )
 
     forward = huggingface_forward(rekv_attention_forward(**attn_kwargs))
-
-    if isinstance(model, LlamaForCausalLM):
-        _model = model.model
-        Attention = _model.layers[0].self_attn.__class__
-        Model = _model.__class__
-    elif isinstance(model, MistralForCausalLM):
-        _model = model.model
-        Attention = _model.layers[0].self_attn.__class__
-        Model = _model.__class__
-    elif isinstance(model, Qwen2ForCausalLM) or isinstance(model, Qwen2Model):
-        _model = model.model
-        Attention = _model.layers[0].self_attn.__class__
-        Model = _model.__class__
-    elif model.__class__.__name__ == "MiniCPMForCausalLM":
-        _model = model.model
-        Attention = _model.layers[0].self_attn.__class__
-        Model = _model.__class__
-    else:
-        raise ValueError(f"Only supports llama, mistral and qwen2 models, not {model.__class__.__name__}.")
-
-    # hf_rope = _model.layers[0].self_attn.rotary_emb 
-    # if isinstance(hf_rope, Qwen2RotaryEmbedding):
-    #     base = hf_rope.base
-    #     distance_scale = 1.0
-    #     dim = hf_rope.dim
-    # else:
-    #     base = hf_rope.config.rope_theta
-    #     distance_scale = distance_scale if distance_scale is not None else 1.0
-    #     partial_rotary_factor = hf_rope.config.partial_rotary_factor if hasattr(hf_rope.config, "partial_rotary_factor") else 1.0
-    #     dim = int((hf_rope.config.hidden_size // hf_rope.config.num_attention_heads) * partial_rotary_factor)
-
-    hf_rope = _model.rotary_emb
+    
+    # 아무튼간에 Qwen2Model을 타면 되는건데
+    ########################### 4.51.3 ##############################
+    # model = model.model
+    ########################### 4.57.3 ##############################
+    # model = model
+    
+    Attention = model.layers[0].self_attn.__class__ # Qwen2Attention
+    Model = model.__class__ # Qwen2Model (Qwen2ForCausalLM)
+    hf_rope = model.rotary_emb # Qwen2RotaryEmbedding
+    
     base = hf_rope.config.rope_theta
     distance_scale = distance_scale if distance_scale is not None else 1.0
     partial_rotary_factor = hf_rope.config.partial_rotary_factor if hasattr(hf_rope.config, "partial_rotary_factor") else 1.0
@@ -187,7 +163,7 @@ def patch_hf(
         base,
         distance_scale
     )
-    _model.position_bias = rope
+    model.position_bias = rope
 
     def set_forward(m):
         if isinstance(m, Attention):
@@ -196,7 +172,7 @@ def patch_hf(
 
     model.apply(set_forward)
 
-    _model._old_forward = _model.forward
-    _model.forward = model_forward.__get__(_model, Model)
+    model._old_forward = model.forward
+    model.forward = model_forward.__get__(model, Model)
 
     return model
