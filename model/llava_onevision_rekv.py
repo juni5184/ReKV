@@ -5,6 +5,9 @@ from logzero import logger
 from model.patch import patch_hf
 from model.abstract_rekv import Abstract_ReKV
 
+import torch.nn as nn
+import math
+
 
 class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV):
     def __init__(self, config, processor, n_frame_tokens, init_prompt_ids, n_local, topk, chunk_size):
@@ -32,6 +35,20 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
         video_features = self.apply_pooling(video_features)
         video_features = video_features.reshape(batch_size, frames * video_features.shape[1], -1)  # (B, Nv*196, D)
         return video_features
+
+    def apply_pooling(self, image_features):
+        height = width = self.config.vision_config.image_size // self.config.vision_config.patch_size
+        batch_frames, _, dim = image_features.shape
+        image_features = image_features.view(batch_frames, height, width, -1)
+        image_features = image_features.permute(0, 3, 1, 2).contiguous()
+
+        height, width = image_features.shape[2:]
+        scaled_shape = [math.ceil(height / 2), math.ceil(width / 2)]
+        image_features = nn.functional.interpolate(image_features, size=scaled_shape, mode="bilinear")
+
+        image_features = image_features.permute(0, 2, 3, 1)
+        image_features = image_features.view(batch_frames, -1, dim)
+        return image_features
 
     @torch.inference_mode()
     def question_answering(self, input_text, max_new_tokens=128, retrieved_indices=None):
@@ -75,7 +92,8 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
                 inputs_embeds = self.get_input_embeddings()(input_ids)
                 out = self.language_model(inputs_embeds=inputs_embeds, use_cache=True, past_key_values=past_key_values)
                 past_key_values = out.past_key_values
-                logits = out.logits
+                logits = self.lm_head(out.last_hidden_state)
+                # logits = out.logits
             else:  # decoding
                 out = self.language_model(
                     input_ids=torch.as_tensor(
@@ -85,7 +103,8 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
                     use_cache=True,
                     past_key_values=past_key_values,
                 )
-                logits = out.logits
+                logits = self.lm_head(out.last_hidden_state)
+                # logits = out.logits
                 past_key_values = out.past_key_values
 
             last_token_logits = logits[0, -1, :]
