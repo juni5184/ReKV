@@ -10,7 +10,7 @@ def huggingface_forward(forward):
         hidden_states: torch.Tensor,
         attention_mask = None,
         position_ids = None,
-        past_key_value = None,
+        past_key_values = None,
         output_attentions: bool = False,
         use_cache: bool = False,
         **kwargs,
@@ -29,7 +29,7 @@ def huggingface_forward(forward):
 
         ret = forward(
             self, hidden_states, hidden_states,
-            position_ids, use_cache, past_key_value,
+            position_ids, use_cache, past_key_values,
             self.q_proj, self.k_proj, self.v_proj, self.o_proj, 
             head_dim, num_heads, num_key_value_heads
         )
@@ -112,7 +112,7 @@ def patch_hf(
                 hidden_states,
                 attention_mask=attention_mask,
                 position_ids=self.position_bias,
-                past_key_value=past_key_values[i] if past_key_values is not None else None,
+                past_key_values=past_key_values[i] if past_key_values is not None else None,
                 output_attentions=output_attentions,
                 use_cache=use_cache,
             )

@@ -92,7 +92,7 @@ class BaseVQA:
 
         formatted_choices = "\n".join(["(" + self.choice_letters[i] + ") " + candidate for i, candidate in enumerate(candidates)])
         formatted_question = f"Question: {question}\nOptions:\n{formatted_choices}\nOnly give the best option."
-
+        logger.debug(f'formatted_question: {formatted_question}')
         return {
             "question": f"{question}",
             "formatted_question": formatted_question,
@@ -116,7 +116,9 @@ class BaseVQA:
         pass
 
     def analyze(self, debug=False):
-        video_annos = self.anno[:1] if debug else self.anno
+        # video_annos = self.anno[:1] if debug else self.anno
+        video_annos = self.anno
+        logger.debug(f'video_annos: {len(video_annos)}')
         for video_sample in tqdm(video_annos):
             logger.debug(f'video_id: {video_sample["video_id"]}')
             self.analyze_a_video(video_sample)
