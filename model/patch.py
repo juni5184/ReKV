@@ -1,6 +1,4 @@
 import torch
-from transformers.models.qwen2.modeling_qwen2 import Qwen2RotaryEmbedding
-
 from model.attention import RotaryEmbeddingESM, rekv_attention_forward
 
 
