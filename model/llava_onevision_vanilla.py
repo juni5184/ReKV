@@ -60,7 +60,7 @@ class LlavaOneVision_Vanilla(LlavaOnevisionForConditionalGeneration):
                 input_ids = self.processor.tokenizer(input_text['prompt']).input_ids
                 input_ids = torch.as_tensor([input_ids], device=device)
                 inputs_embeds = self.get_input_embeddings()(input_ids)
-                out = self.language_model(inputs_embeds=inputs_embeds, use_cache=True, return_dict=True)
+                out = self.language_model(inputs_embeds=inputs_embeds, use_cache=True)
                 logits = self.lm_head(out.last_hidden_state)
                 # logits = out.logits
             else:  # decoding
@@ -70,7 +70,6 @@ class LlavaOneVision_Vanilla(LlavaOnevisionForConditionalGeneration):
                         device=device,
                     ),
                     use_cache=True,
-                    return_dict=True,
                 )
                 logits = self.lm_head(out.last_hidden_state)
                 # logits = out.logits
@@ -102,6 +101,7 @@ class LlavaOneVision_Vanilla(LlavaOnevisionForConditionalGeneration):
 
 
 def load_model(model_path='/scratch2/juni5184/model_zoo/llava-onevision-qwen2-7b-ov-hf'):
+    device = 'cuda'
     processor = LlavaOnevisionProcessor.from_pretrained(model_path)
     model = LlavaOneVision_Vanilla.from_pretrained(
         model_path, 

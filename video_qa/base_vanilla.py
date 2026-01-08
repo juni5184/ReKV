@@ -90,8 +90,7 @@ class BaseVanillaVQA:
         pass
 
     def analyze(self, debug=False):
-        # video_annos = self.anno[:1] if debug else self.anno
-        video_annos = self.anno
+        video_annos = self.anno[:1] if debug else self.anno
         logger.debug(f'video_annos: {len(video_annos)}')
         for video_sample in tqdm(video_annos):
             logger.debug(f'video_id: {video_sample["video_id"]}')

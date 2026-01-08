@@ -62,23 +62,11 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
         input_ids = self.processor.tokenizer(input_text['question']).input_ids
         input_ids = torch.as_tensor([input_ids], device=device)
         
-        # Check if uniform sampling is requested
-        uniform_sampling = input_text.get('uniform_sampling', False)
-        
         for layer_kv in self.kv_cache:  # activate retrieval mode
-            layer_kv.set_retrieval(uniform_sampling=uniform_sampling)
+            layer_kv.set_retrieval()
 
         # Internal retrieval 여기서 시작
         if retrieved_indices is None:  # Internal retrieval
-            retrieval_type = "Uniform sampling" if uniform_sampling else "Internal retrieval"
-            logger.info(retrieval_type)
-            out = self.language_model(input_ids=input_ids, use_cache=True, past_key_values=self.kv_cache)
-            past_key_values = out.past_key_values  # Retrieved KV-Cache: L x 2 x (B, h, N, Dh)
-        else:  # External retrieval
-            logger.info("External retrieval")
-            for layer_kv in self.kv_cache:
-                assert layer_kv.block_size == self.n_frame_tokens, f'block_size: {layer_kv.block_size}, n_frame_tokens: {self.n_frame_tokens}'
-                layer_kv.set_retrieved_block_indices(retrieved_indices)
             out = self.language_model(input_ids=input_ids, use_cache=True, past_key_values=self.kv_cache)
             past_key_values = out.past_key_values  # Retrieved KV-Cache: L x 2 x (B, h, N, Dh)
 
