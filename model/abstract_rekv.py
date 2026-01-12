@@ -30,6 +30,7 @@ class Abstract_ReKV:
         pass
 
     def _encode_video_chunk(self, video_chunk):
+        # Nv = number of video frames = 64
         pixel_values_videos = self.processor.video_processor(video_chunk, return_tensors="pt").pixel_values_videos.to(self.device, self.dtype)  # (1, Nv, 3, H, W)
         video_features = self._get_video_features(pixel_values_videos)  # (1, Nv*196, D)
         assert self.n_local >= video_features.shape[1], f'n_local: {self.n_local}, video_features: {video_features.shape[1]}'
@@ -41,9 +42,9 @@ class Abstract_ReKV:
     def encode_video(self, video, encode_chunk_size=64):  # video: (Nv, H, W, 3)
         # encode chunk by chunk
         num_frames = video.shape[0]
-        num_chunks = num_frames // encode_chunk_size
+        num_chunks = num_frames // encode_chunk_size # 600 // 64 = 9
 
-        for chunk_idx in range(num_chunks):
+        for chunk_idx in range(num_chunks): # 0 ~ 8
             start_idx = chunk_idx * encode_chunk_size
             end_idx = start_idx + encode_chunk_size
             chunk_video = video[start_idx:end_idx]
