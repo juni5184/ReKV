@@ -73,7 +73,7 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
         for layer_kv in self.kv_cache:  # reset to default
             layer_kv.reset_retrieval()
 
-        for i in range(max_new_tokens):
+        for i in range(max_new_tokens): # 16
             if i == 0:  # prefill
                 input_ids = self.processor.tokenizer(input_text['prompt']).input_ids
                 input_ids = torch.as_tensor([input_ids], device=device)
@@ -125,6 +125,7 @@ def load_model(model_path='model_zoo/LLaVA/llava-onevision-qwen2-7b-ov-hf',
                n_init=None, n_local=None, topk=64, chunk_size=1):
     device = 'cuda'
     n_frame_tokens = 196
+    # 4.57.3으로 upgrade 했을때 processor 내부 변경됨
     processor = LlavaOnevisionProcessor.from_pretrained(model_path)
     
     init_prompt = '<|im_start|>system \nYou are a helpful assistant.<|im_end|><|im_start|>user '
@@ -153,11 +154,11 @@ def load_model(model_path='model_zoo/LLaVA/llava-onevision-qwen2-7b-ov-hf',
         chunk_size=chunk_size,
     )
     model.language_model = patch_hf(model.language_model, **inf_llm_config)
+    model.eval()
     
+    # logger
     for k, v in inf_llm_config.items():
         logger.info(f'{k}: {v}')
     logger.info(f'n_frame_tokens: {n_frame_tokens}')
-
-    model.eval()
 
     return model, processor
