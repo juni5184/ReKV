@@ -67,7 +67,6 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
                 out = self.language_model(inputs_embeds=inputs_embeds, use_cache=True, past_key_values=past_key_values)
                 past_key_values = out.past_key_values
                 logits = self.lm_head(out.last_hidden_state)
-                # logits = out.logits
             else:  # decoding
                 out = self.language_model(
                     input_ids=torch.as_tensor(
@@ -78,7 +77,6 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
                     past_key_values=past_key_values,
                 )
                 logits = self.lm_head(out.last_hidden_state)
-                # logits = out.logits
                 past_key_values = out.past_key_values
 
             last_token_logits = logits[0, -1, :]

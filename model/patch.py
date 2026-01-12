@@ -138,7 +138,6 @@ def patch_hf(
 
     forward = huggingface_forward(rekv_attention_forward(**attn_kwargs))
     
-    # 아무튼간에 Qwen2Model을 타면 되는건데
     ########################### 4.51.3 ##############################
     # model = model.model
     ########################### 4.57.3 ##############################
