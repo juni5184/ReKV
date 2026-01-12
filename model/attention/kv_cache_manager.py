@@ -185,7 +185,7 @@ class VectorTensor:
 
 GLOBAL_STREAM = None
 
-
+# ContextManager: KV-Cache manager for the context memory
 class ContextManager:
     def __init__(self, 
                  position_embedding,
@@ -260,7 +260,7 @@ class ContextManager:
         """
         Only use the metadata of these parameters, such as shape, dtype, and device.
         """
-        assert local_q.dim() == 4
+        assert local_q.dim() == 4 # (batch, num_heads, len_q, dim_head)
         batch_size, num_heads, len_q, dim_head = local_q.shape
         num_heads_kv = local_k.size(1)
 
@@ -278,18 +278,20 @@ class ContextManager:
         self.num_units = batch_size
         self.unit_size = num_heads
         self.unit_size_kv = num_heads_kv
-
-        self.global_blocks = [[] for _ in range(self.num_units)] # context memory's KV-Cache: [ batch_size x [memory_unit] ]
-        self.cached_blocks = [{} for _ in range(self.num_units)] # relavency scores of blocks: batch_size x {block_id: block_score}
         self.num_global_block = 0
-
-        # context memory's representative keys: batch_size x (n_blocks, hidden_dim)
+        
+        # Initialize the context memory's KV-Cache, relavency scores of blocks, and representative keys
+        # NOTE: context memory's KV-Cache: [ batch_size x [memory_unit] ]
+        self.global_blocks = [[] for _ in range(self.num_units)] 
+        # NOTE: relavency scores of blocks: batch_size x {block_id: block_score}
+        self.cached_blocks = [{} for _ in range(self.num_units)] 
+        # NOTE: context memory's representative keys: batch_size x (n_blocks, hidden_dim)
         self.block_k = [VectorTensor(
             dim_head * self.unit_size, global_k.dtype, global_k.device
         ) for _ in range(self.num_units)]
 
-        # local KV
-        self.local_k = torch.empty((self.num_units, self.unit_size_kv, 0, dim_head), dtype=local_k.dtype, device=local_k.device)  # (batch_size, n_head_kv, 0, dim_head)
+        # local KV 버퍼 초기화: (batch_size, n_head_kv, 0, dim_head)
+        self.local_k = torch.empty((self.num_units, self.unit_size_kv, 0, dim_head), dtype=local_k.dtype, device=local_k.device) 
         self.local_v = torch.empty((self.num_units, self.unit_size_kv, 0, dim_head), dtype=local_v.dtype, device=local_v.device)
 
         # global KV that are not yet processed into blocks.
@@ -318,6 +320,8 @@ class ContextManager:
             )
         self.global_buffer_init_st = 0
         self.global_buffer_init_ed = 0
+
+        # GPU 캐시 풀 생성
         self.cuda_cache = CudaCache(
             self.max_cached_block * self.num_units,
             self.unit_size_kv * self.block_size * dim_head * 2,
@@ -326,15 +330,13 @@ class ContextManager:
 
         self.initialized = True
 
-    def set_retrieval(self, uniform_sampling=False):
+    def set_retrieval(self):
         self.to_retrieve = True
-        self.uniform_sampling = uniform_sampling
 
     def reset_retrieval(self):
         self.similarity = None
         self.retrieved_block_indices = None
         self.to_retrieve = False
-        self.uniform_sampling = False
 
     def set_retrieved_block_indices(self, retrieved_block_indices):
         # retrieved_block_indices (list): batch_size x n_frames
@@ -348,12 +350,8 @@ class ContextManager:
         return [init_k, retrieved_k] and the respective v
         """
         if query is not None:  # retrieve based on the attention score between query and context's representative keys
-            if self.uniform_sampling:
-                block_topk = self._calc_block_uniform()
-                self.set_retrieved_block_indices(block_topk)
-            else:
-                block_topk = self._calc_block_topk(query)
-                self.set_retrieved_block_indices(block_topk)
+            block_topk = self._calc_block_topk(query)
+            self.set_retrieved_block_indices(block_topk)
 
         assert len(self.retrieved_block_indices) == self.num_units
 
@@ -372,7 +370,7 @@ class ContextManager:
 
                 self.load_count += 1
                 for u in range(self.num_units):
-                    for b_idx in self.retrieved_block_indices[u]:
+                    for b_idx in self.retrieved_block_indices[u]: # 불러온 블록 인덱스 리스트
                         self.cached_blocks[u][b_idx] = self.load_count
                 
                 # no need to load init KV
@@ -450,6 +448,8 @@ class ContextManager:
             else:  # The local window is already filled, but the number of input frames is less than 'topk'.
                 ret = [list(range(len(self.global_blocks[0]))) for _ in range(self.num_units)]
         else:
+            # 이쪽으로 들어감
+            # 블록 대표 벡터와 query 벡터 간 cosine similarity 계산
             logits = torch.stack([self.block_k[u].get_cosine_similarity(global_h_q[u]) for u in range(self.num_units)])  # (batch_size, block_num)
 
         if logits is not None:
@@ -460,6 +460,7 @@ class ContextManager:
             if remainder_size > 0:
                 remainder_logits = logits[:, -remainder_size:].mean(dim=-1, keepdim=True)  # (batch_size, 1)
                 chunked_logits = torch.cat([chunked_logits, remainder_logits], dim=1)
+            # 정렬된 topk 블록 인덱스 계산
             ret = chunked_logits.topk(self.topk//self.chunk_size, dim=1).indices
             ret = ret.sort(dim=1)[0][:, :, None]  # (batch_size, topk//chunk_size, 1)
             ret = ret * self.chunk_size + torch.arange(self.chunk_size, device=ret.device)[None, None, :]  # (batch_size, topk//chunk_size, chunk_size)
