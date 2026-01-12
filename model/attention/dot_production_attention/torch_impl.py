@@ -44,6 +44,9 @@ class TorchMultiStageDotProductionAttention(MultiStageDotProductionAttention):
             end=False, get_score=False,
             *args, **kwargs
         ):
+        # q: (batch, num_heads, len_q, dim_head)
+        # k: (batch, num_heads, len_k, dim_head)
+        # v: (batch, num_heads, len_k, dim_head)
         len_q = q.size(-2)
         len_k = k.size(-2)
 
