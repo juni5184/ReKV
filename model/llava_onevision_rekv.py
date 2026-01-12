@@ -32,23 +32,9 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
             selected_video_feature = selected_video_feature
         video_features = self.multi_modal_projector(selected_video_feature)
 
-        video_features = self.apply_pooling(video_features)
+        video_features = self.model.apply_pooling(video_features)
         video_features = video_features.reshape(batch_size, frames * video_features.shape[1], -1)  # (B, Nv*196, D)
         return video_features
-
-    def apply_pooling(self, image_features):
-        height = width = self.config.vision_config.image_size // self.config.vision_config.patch_size
-        batch_frames, _, dim = image_features.shape
-        image_features = image_features.view(batch_frames, height, width, -1)
-        image_features = image_features.permute(0, 3, 1, 2).contiguous()
-
-        height, width = image_features.shape[2:]
-        scaled_shape = [math.ceil(height / 2), math.ceil(width / 2)]
-        image_features = nn.functional.interpolate(image_features, size=scaled_shape, mode="bilinear")
-
-        image_features = image_features.permute(0, 2, 3, 1)
-        image_features = image_features.view(batch_frames, -1, dim)
-        return image_features
 
     @torch.inference_mode()
     def question_answering(self, input_text, max_new_tokens=128, retrieved_indices=None):
