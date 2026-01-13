@@ -24,9 +24,10 @@ class BaseVanillaVQA:
     def __init__(self, anno, save_dir, sample_fps,
                  qa_model, qa_processor=None,
                  num_chunks=None, chunk_idx=None,
-                 chunk_size=1) -> None:
+                 chunk_size=1, retrieve_size=64) -> None:
         
         self.sample_fps = sample_fps
+        self.retrieve_size = retrieve_size
 
         self.qa_model = qa_model
         self.qa_processor = qa_processor
@@ -55,10 +56,13 @@ class BaseVanillaVQA:
 
     def load_video(self, video_path):
         vr = VideoReader(video_path, ctx=cpu(0))
-        fps = round(vr.get_avg_fps())
-        frame_idx = [i for i in range(0, len(vr), int(fps / self.sample_fps))]
+        num_frames = len(vr)
+        # Uniform sampling to retrieve_size frames (64)
+        if num_frames <= self.retrieve_size:
+            frame_idx = list(range(num_frames))
+        else:
+            frame_idx = [int(i) for i in torch.linspace(0, num_frames - 1, steps=self.retrieve_size).tolist()]
         video = vr.get_batch(frame_idx).asnumpy()
-        logger.debug(f'video shape: {video.shape}')
         return video
     
     def format_mcqa_prompt(self, question, candidates):
@@ -129,6 +133,7 @@ def work_vanilla(QA_CLASS):
     parser.add_argument("--save_dir", type=str, required=True)
     parser.add_argument("--anno_path", type=str, required=True)
     parser.add_argument("--model", type=str, default="llava_ov_7b")
+    parser.add_argument("--retrieve_size", type=int, default=64)
     parser.add_argument("--debug", type=str2bool, nargs='?', const=True, default=True)
     args = parser.parse_args()
 
@@ -159,6 +164,7 @@ def work_vanilla(QA_CLASS):
         num_chunks=args.num_chunks,
         chunk_idx=args.chunk_idx,
         save_dir=args.save_dir,
+        retrieve_size=args.retrieve_size,
     )
 
     analyzer.analyze(debug=args.debug)

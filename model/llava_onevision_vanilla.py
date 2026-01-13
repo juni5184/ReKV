@@ -1,14 +1,12 @@
 import torch
 from transformers import LlavaOnevisionProcessor, LlavaOnevisionForConditionalGeneration
 
-import torch.nn as nn
-import math
+from model.abstract_vanilla import Abstract_Vanilla
 
-
-class LlavaOneVision_Vanilla(LlavaOnevisionForConditionalGeneration):
-    def __init__(self, config, processor):
+class LlavaOneVision_Vanilla(LlavaOnevisionForConditionalGeneration, Abstract_Vanilla):
+    def __init__(self, config, processor, n_frame_tokens, init_prompt_ids):
         LlavaOnevisionForConditionalGeneration.__init__(self, config)
-        self.processor = processor
+        Abstract_Vanilla.__init__(self, processor, n_frame_tokens, init_prompt_ids)
 
     def get_prompt(self, query, mc=False):
         prompt =  f"\n{query}<|im_end|><|im_start|>assistant\n"
@@ -24,8 +22,6 @@ class LlavaOneVision_Vanilla(LlavaOnevisionForConditionalGeneration):
 
         if self.config.vision_feature_select_strategy == "default":
             selected_video_feature = selected_video_feature[:, 1:]
-        elif self.config.vision_feature_select_strategy == "full":
-            selected_video_feature = selected_video_feature
         video_features = self.multi_modal_projector(selected_video_feature)
 
         video_features = self.model.apply_pooling(video_features)
@@ -40,14 +36,21 @@ class LlavaOneVision_Vanilla(LlavaOnevisionForConditionalGeneration):
         output_ids = []
         stopped = False
 
-        for i in range(max_new_tokens): # 16
+        # NOTE: Only input the question to perform retrieval.
+        input_ids = self.processor.tokenizer(input_text['question']).input_ids
+        input_ids = torch.as_tensor([input_ids], device=device)
+        
+        out = self.language_model(input_ids=input_ids, use_cache=True, past_key_values=self.kv_cache)
+        past_key_values = out.past_key_values  # Retrieved KV-Cache: L x 2 x (B, h, N, Dh)
+        
+        for i in range(max_new_tokens):
             if i == 0:  # prefill
                 input_ids = self.processor.tokenizer(input_text['prompt']).input_ids
                 input_ids = torch.as_tensor([input_ids], device=device)
                 inputs_embeds = self.get_input_embeddings()(input_ids)
-                out = self.language_model(inputs_embeds=inputs_embeds, use_cache=True)
+                out = self.language_model(inputs_embeds=inputs_embeds, use_cache=True, past_key_values=past_key_values)
+                past_key_values = out.past_key_values  # Update past_key_values
                 logits = self.lm_head(out.last_hidden_state)
-                # logits = out.logits
             else:  # decoding
                 out = self.language_model(
                     input_ids=torch.as_tensor(
@@ -55,9 +58,10 @@ class LlavaOneVision_Vanilla(LlavaOnevisionForConditionalGeneration):
                         device=device,
                     ),
                     use_cache=True,
+                    past_key_values=past_key_values,
                 )
+                past_key_values = out.past_key_values  # Update past_key_values
                 logits = self.lm_head(out.last_hidden_state)
-                # logits = out.logits
 
             last_token_logits = logits[0, -1, :]
             
@@ -85,15 +89,21 @@ class LlavaOneVision_Vanilla(LlavaOnevisionForConditionalGeneration):
         return output
 
 
-def load_model(model_path='/scratch2/juni5184/model_zoo/llava-onevision-qwen2-7b-ov-hf'):
+def load_model(model_path='/scratch2/juni5184/model_zoo/llava-onevision-qwen2-7b-ov-hf', n_init=None):
     device = 'cuda'
+    n_frame_tokens = 196
     processor = LlavaOnevisionProcessor.from_pretrained(model_path)
+
+    init_prompt = '<|im_start|>system \nYou are a helpful assistant.<|im_end|><|im_start|>user '
+    init_prompt_ids = processor.tokenizer(init_prompt, return_tensors="pt").input_ids.to(device)
     model = LlavaOneVision_Vanilla.from_pretrained(
         model_path, 
         device_map="auto",
         low_cpu_mem_usage=True, 
         torch_dtype=torch.float16,
         processor=processor,
+        n_frame_tokens=n_frame_tokens,
+        init_prompt_ids=init_prompt_ids,
     )
     model.eval()
 

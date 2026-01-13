@@ -21,8 +21,17 @@ class VanillaVQA(BaseVanillaVQA):
         video_path = video_sample['video_path']
         video_path = video_path.replace('data', '/scratch2/juni5184/datasets')
         video = self.load_video(video_path)
-        video_tensor = torch.from_numpy(video)
+        if not isinstance(video, torch.Tensor):
+            video_tensor = torch.from_numpy(video)
+            video_tensor = video_tensor.permute(0, 3, 1, 2) # 없을때 40, 있을때 60 (sample 기준)
+        else:
+            video_tensor = video
 
+        self.qa_model.clear_cache()
+        self.qa_model.encode_init_prompt()
+        self.qa_model.encode_video(video_tensor)
+
+        # Process each question using the same video KV-cache
         for sample in video_sample['conversations']:
             logger.debug(f'sample: {sample}')
             question = sample['question']
