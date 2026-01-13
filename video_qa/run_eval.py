@@ -18,6 +18,10 @@ def eval_qaego4d_vanilla(args):
     num_chunks = args.num_chunks
     save_dir = f"results/{args.model}_vanilla/qaego4d/{args.retrieve_size}-{args.sample_fps}"
     solver = "vanilla_offline_vqa"
+    if args.sample:
+        anno_path = "data/qaego4d/test_mc_sample.json"
+    else:
+        anno_path = "data/qaego4d/test_mc.json"
     if not args.only_eval:
         processes = []
         for idx in range(0, num_chunks):
@@ -25,9 +29,9 @@ def eval_qaego4d_vanilla(args):
                 "python", f"video_qa/{solver}.py",
                 "--model", args.model,
                 "--sample_fps", str(args.sample_fps),
+                "--retrieve_size", str(args.retrieve_size),
                 "--save_dir", save_dir,
-                # "--anno_path", "data/qaego4d/test_mc.json",
-                "--anno_path", "data/qaego4d/test_mc_sample.json",
+                "--anno_path", anno_path,
                 "--debug", str(args.debug),
                 "--num_chunks", str(num_chunks),
                 "--chunk_idx", str(idx)
@@ -56,6 +60,10 @@ def eval_qaego4d_rekv(args):
     num_chunks = args.num_chunks
     save_dir = f"results/{args.model}_rekv/qaego4d/{args.retrieve_size}-{args.sample_fps}"
     solver = "rekv_offline_vqa"
+    if args.sample:
+        anno_path = "data/qaego4d/test_mc_sample.json"
+    else:
+        anno_path = "data/qaego4d/test_mc.json"
     if not args.only_eval:
         processes = []
         for idx in range(0, num_chunks):
@@ -66,8 +74,7 @@ def eval_qaego4d_rekv(args):
                 "--n_local", str(args.n_local),
                 "--retrieve_size", str(args.retrieve_size),
                 "--save_dir", save_dir,
-                # "--anno_path", "data/qaego4d/test_mc.json",
-                "--anno_path", "data/qaego4d/test_mc_sample.json",
+                "--anno_path", anno_path,
                 "--debug", str(args.debug),
                 "--num_chunks", str(num_chunks),
                 "--chunk_idx", str(idx)
@@ -103,6 +110,7 @@ if __name__ == "__main__":
     parser.add_argument("--retrieve_size", type=int, default=64)
     parser.add_argument("--debug", type=str, default='false')
     parser.add_argument("--solver", type=str, default='vanilla', choices=['vanilla', 'rekv'])
+    parser.add_argument("--sample", action="store_true")
     args = parser.parse_args()
 
     if args.debug == 'true':
