@@ -115,6 +115,10 @@ def str2bool(value):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
+MODEL_PATH = {
+    'llava_ov_7b': '/scratch2/juni5184/model_zoo/llava-onevision-qwen2-7b-ov-hf',
+    'llava_ov_0.5b': '/scratch2/juni5184/model_zoo/llava-onevision-qwen2-0.5b-ov-hf',
+}   
 def work_vanilla(QA_CLASS):
     logging.set_verbosity_error()
 
@@ -139,15 +143,7 @@ def work_vanilla(QA_CLASS):
     logger.info('seed: 2024')
 
     # VideoQA model
-    model_path = None
-    if args.model == 'llava_ov_7b':
-        model_path = '/scratch2/juni5184/model_zoo/llava-onevision-qwen2-7b-ov-hf'
-    elif args.model == 'llava_ov_0.5b':
-        model_path = '/scratch2/juni5184/model_zoo/llava-onevision-qwen2-0.5b-ov-hf'
-    else:
-        raise ValueError(f"Invalid model: {args.model}")
-    assert model_path is not None, f"Invalid model: {args.model}"
-        
+    model_path = MODEL_PATH[args.model]
     videoqa_model, videoqa_processor = llava_onevision_vanilla.load_model(
         model_path=model_path,
     )
