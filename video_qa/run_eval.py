@@ -34,7 +34,8 @@ def eval_qaego4d_vanilla(args):
                 "--anno_path", anno_path,
                 "--debug", str(args.debug),
                 "--num_chunks", str(num_chunks),
-                "--chunk_idx", str(idx)
+                "--chunk_idx", str(idx),
+                "--solver", args.solver,
             ]
             p = multiprocessing.Process(
                 target=exec,
@@ -77,7 +78,8 @@ def eval_qaego4d_rekv(args):
                 "--anno_path", anno_path,
                 "--debug", str(args.debug),
                 "--num_chunks", str(num_chunks),
-                "--chunk_idx", str(idx)
+                "--chunk_idx", str(idx),
+                "--solver", args.solver,
             ]
             p = multiprocessing.Process(
                 target=exec,
