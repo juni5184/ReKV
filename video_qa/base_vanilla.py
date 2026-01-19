@@ -4,16 +4,12 @@ import json
 import os
 import math
 import argparse
-
+import numpy as np
 import pandas as pd
 import torch
 from tqdm import tqdm
 from decord import VideoReader, cpu
-from transformers import (
-    logging,
-    LlavaOnevisionForConditionalGeneration, LlavaOnevisionProcessor,
-    VideoLlavaForConditionalGeneration, VideoLlavaProcessor
-)
+from transformers import logging
 import logzero
 from logzero import logger
 
@@ -56,14 +52,13 @@ class BaseVanillaVQA:
 
     def load_video(self, video_path):
         vr = VideoReader(video_path, ctx=cpu(0))
-        num_frames = len(vr)
-        # Uniform sampling to retrieve_size frames (64)
-        if num_frames <= self.retrieve_size:
-            frame_idx = list(range(num_frames))
+        total_frames = len(vr)
+        if total_frames <= self.retrieve_size:
+            frame_idx = np.arange(total_frames)
         else:
-            frame_idx = [int(i) for i in torch.linspace(0, num_frames - 1, steps=self.retrieve_size).tolist()]
-        video = vr.get_batch(frame_idx).asnumpy()
-        return video
+            frame_idx = torch.linspace(0, total_frames - 1, steps=self.retrieve_size).long()
+
+        return vr.get_batch(frame_idx).asnumpy()
     
     def format_mcqa_prompt(self, question, candidates):
         assert len(question) > 0, f"Q: {question}"
