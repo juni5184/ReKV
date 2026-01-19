@@ -232,6 +232,7 @@ class Qwen2DecoderLayer(GradientCheckpointingLayer):
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
         # Self Attention
+        # add past_key_values to the self_attn (transformer 4.57.3)
         hidden_states, _, present_key_values = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
