@@ -9,22 +9,18 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 from decord import VideoReader, cpu
-from transformers import (
-    logging,
-    LlavaOnevisionForConditionalGeneration, LlavaOnevisionProcessor,
-    VideoLlavaForConditionalGeneration, VideoLlavaProcessor
-)
+from transformers import logging
 import logzero
 from logzero import logger
 
-from model import llava_onevision_rekv
+from model import llava_onevision_rekv, llava_onevision_vanilla
 
 
 class BaseVQA:
     def __init__(self, anno, save_dir, sample_fps,
                  qa_model, qa_processor=None,
                  num_chunks=None, chunk_idx=None,
-                 retrieve_size=64, chunk_size=1) -> None:
+                 retrieve_size=64, chunk_size=64) -> None:
         
         self.sample_fps = sample_fps
 
@@ -159,6 +155,7 @@ def work(QA_CLASS):
     parser.add_argument("--n_local", type=int, default=15000)
     parser.add_argument("--retrieve_size", type=int, default=64)
     parser.add_argument("--retrieve_chunk_size", type=int, default=1)
+    parser.add_argument("--solver", type=str, default='vanilla', choices=['vanilla', 'rekv'])
     parser.add_argument("--debug", type=str2bool, nargs='?', const=True, default=True)
     args = parser.parse_args()
 
@@ -173,13 +170,19 @@ def work(QA_CLASS):
     logger.info('seed: 2024')
 
     # VideoQA model
-    model_path = MODEL_PATH[args.model]
-    videoqa_model, videoqa_processor = llava_onevision_rekv.load_model(
-        model_path=model_path,
-        n_local=args.n_local,
-        topk=args.retrieve_size,
-        chunk_size=args.retrieve_chunk_size,
-    )
+    if args.solver == 'rekv':
+        model_path = MODEL_PATH[args.model]
+        videoqa_model, videoqa_processor = llava_onevision_rekv.load_model(
+            model_path=model_path,
+            n_local=args.n_local,
+            topk=args.retrieve_size,
+            chunk_size=args.retrieve_chunk_size,
+        )
+    else:
+        model_path = MODEL_PATH[args.model]
+        videoqa_model, videoqa_processor = llava_onevision_vanilla.load_model(
+            model_path=model_path,
+        )
 
     # Load ground truth file
     anno = json.load(open(args.anno_path))

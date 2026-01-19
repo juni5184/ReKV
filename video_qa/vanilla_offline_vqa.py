@@ -1,10 +1,13 @@
 import torch
 from logzero import logger
+import numpy as np
+import torch
+from decord import VideoReader, cpu
 
-from video_qa.base_vanilla import BaseVanillaVQA, work_vanilla
+from video_qa.base import BaseVQA, work
 
 
-class VanillaVQA(BaseVanillaVQA):
+class VanillaVQA(BaseVQA):
     def video_close_qa(self, question, candidates, correct_choice):
         input_text = self.format_mcqa_prompt(question, candidates)
         pred_answer = self.qa_model.question_answering(input_text, max_new_tokens=16)
@@ -14,6 +17,15 @@ class VanillaVQA(BaseVanillaVQA):
             'pred_choice': pred_letter,
             'acc': float(pred_letter == correct_choice),
         }
+
+    def load_video(self, video_path):
+        vr = VideoReader(video_path, ctx=cpu(0))
+        total_frames = len(vr)
+        if total_frames <= self.retrieve_size:
+            frame_idx = np.arange(total_frames)
+        else:
+            frame_idx = torch.linspace(0, total_frames - 1, steps=self.retrieve_size).long()
+        return vr.get_batch(frame_idx).asnumpy()
 
     @torch.inference_mode()
     def analyze_a_video(self, video_sample):
@@ -44,7 +56,7 @@ class VanillaVQA(BaseVanillaVQA):
                     answer = choices[0]
                 correct_choice = self.choice_letters[choices.index(answer)]
                 qa_results = self.video_close_qa(question, choices, correct_choice)
-                self.record[self.chunk_size].append({
+                self.record[(self.retrieve_size, self.chunk_size)].append({
                     'video_id': video_sample['video_id'],
                     'question': question,
                     'choices': choices,
@@ -56,7 +68,7 @@ class VanillaVQA(BaseVanillaVQA):
                 })
 
             if 'question_type' in sample:
-                self.record[self.chunk_size][-1]['task'] = sample['question_type']
+                self.record[(self.retrieve_size, self.chunk_size)][-1]['task'] = sample['question_type']
 
 if __name__ == "__main__":
-    work_vanilla(VanillaVQA)
+    work(VanillaVQA)

@@ -89,7 +89,7 @@ class LlavaOneVision_Vanilla(LlavaOnevisionForConditionalGeneration, Abstract_Va
         return output
 
 
-def load_model(model_path='/scratch2/juni5184/model_zoo/llava-onevision-qwen2-7b-ov-hf', n_init=None):
+def load_model(model_path='/scratch2/juni5184/model_zoo/llava-onevision-qwen2-7b-ov-hf'):
     device = 'cuda'
     n_frame_tokens = 196
     processor = LlavaOnevisionProcessor.from_pretrained(model_path)
