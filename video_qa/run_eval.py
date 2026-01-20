@@ -18,12 +18,10 @@ def exec(cmd, sub=False, device=None):
 def eval_qaego4d(args):
     num_chunks = args.num_chunks
     save_dir = f"results/{args.model}/qaego4d/{args.solver}/{args.retrieve_size}-{args.sample_fps}"
-    if args.solver == 'rekv':
-        solver = "rekv_offline_vqa"
-    else:
-        solver = "vanilla_offline_vqa"
+    solver = f'{args.solver}_offline_vqa'
     if args.sample:
-        anno_path = "data/qaego4d/test_mc_sample.json"
+        # anno_path = "data/qaego4d/test_mc_sample.json"
+        anno_path = "data/qaego4d/test_mc_sample_2.json"
     else:
         anno_path = "data/qaego4d/test_mc.json"
     if not args.only_eval:
@@ -40,7 +38,7 @@ def eval_qaego4d(args):
                 "--debug", str(args.debug),
                 "--num_chunks", str(num_chunks),
                 "--chunk_idx", str(idx),
-                "--solver", args.solver,
+                "--solver", str(args.solver),
             ]
             p = multiprocessing.Process(
                 target=exec,
@@ -65,10 +63,7 @@ def eval_qaego4d(args):
 def eval_mlvu(args):
     num_chunks = args.num_chunks
     save_dir = f"results/{args.model}/mlvu/{args.retrieve_size}-{args.sample_fps}"
-    if args.solver == 'rekv':
-        solver = "rekv_offline_vqa"
-    else:
-        solver = "vanilla_offline_vqa"
+    solver = f'{args.solver}_offline_vqa'
     if args.sample:
         anno_path = "data/mlvu/dev_debug_mc.json"
     else:
@@ -87,7 +82,7 @@ def eval_mlvu(args):
                 "--debug", str(args.debug),
                 "--num_chunks", str(num_chunks),
                 "--chunk_idx", str(idx),
-                "--solver", args.solver,
+                "--solver", str(args.solver),
             ]
             p = multiprocessing.Process(
                 target=exec,
