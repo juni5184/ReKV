@@ -5,9 +5,6 @@ from logzero import logger
 from model.patch import patch_hf
 from model.abstract_rekv import Abstract_ReKV
 
-import torch.nn as nn
-import math
-
 
 class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV):
     def __init__(self, config, processor, n_frame_tokens, init_prompt_ids, n_local, topk, chunk_size):
@@ -51,39 +48,35 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
         for layer_kv in self.kv_cache:  # activate retrieval mode
             layer_kv.set_retrieval()
 
-        # Internal retrieval 여기서 시작
-        if retrieved_indices is None:  # Internal retrieval
-            out = self.language_model(input_ids=input_ids, use_cache=True, past_key_values=self.kv_cache)
-            past_key_values = out.past_key_values  # Retrieved KV-Cache: L x 2 x (B, h, N, Dh)
+        # Retrieved KV-Cache: L x 2 x (B, h, N, Dh)
+        output = self.language_model(input_ids=input_ids, use_cache=True, past_key_values=self.kv_cache.copy())
+        past_key_values = output.past_key_values # past_key_values: Tuple
 
-        for layer_kv in self.kv_cache:  # reset to default
+        # Deactivate retrieval mode
+        for layer_kv in self.kv_cache:  
             layer_kv.reset_retrieval()
 
-        for i in range(max_new_tokens): # 16
+        # Question-answering 
+        for i in range(max_new_tokens):
             if i == 0:  # prefill
                 input_ids = self.processor.tokenizer(input_text['prompt']).input_ids
                 input_ids = torch.as_tensor([input_ids], device=device)
                 inputs_embeds = self.get_input_embeddings()(input_ids)
-                out = self.language_model(inputs_embeds=inputs_embeds, use_cache=True, past_key_values=past_key_values)
-                past_key_values = out.past_key_values
-                logits = self.lm_head(out.last_hidden_state)
+                outputs = self.language_model(inputs_embeds=inputs_embeds, use_cache=True, past_key_values=past_key_values)
             else:  # decoding
-                out = self.language_model(
+                outputs = self.language_model(
                     input_ids=torch.as_tensor(
                         [[token]],
                         device=device,
                     ),
                     use_cache=True,
                     past_key_values=past_key_values,
-                )
-                logits = self.lm_head(out.last_hidden_state)
-                past_key_values = out.past_key_values
-
-            last_token_logits = logits[0, -1, :]
+                ) 
+            past_key_values = outputs.past_key_values
+            hidden_states = outputs.last_hidden_state
             
-            _, indices = torch.topk(last_token_logits, 2)
-            tokens = [int(index) for index in indices.tolist()]
-            token = tokens[0]
+            logits = self.lm_head(hidden_states[0, -1, :])
+            token = torch.argmax(logits, dim=-1).item()            
 
             output_ids.append(token)
 
@@ -109,10 +102,11 @@ def load_model(model_path='model_zoo/LLaVA/llava-onevision-qwen2-7b-ov-hf',
                n_init=None, n_local=None, topk=64, chunk_size=1):
     device = 'cuda'
     n_frame_tokens = 196
-    processor = LlavaOnevisionProcessor.from_pretrained(model_path)
     
+    processor = LlavaOnevisionProcessor.from_pretrained(model_path)
     init_prompt = '<|im_start|>system \nYou are a helpful assistant.<|im_end|><|im_start|>user '
     init_prompt_ids = processor.tokenizer(init_prompt, return_tensors="pt").input_ids.to(device)
+    
     inf_llm_config = {
         'n_init': init_prompt_ids.shape[1] if n_init is None else n_init,
         'n_local': n_local,

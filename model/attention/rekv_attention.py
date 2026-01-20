@@ -19,7 +19,7 @@ def rekv_attention_forward(
                     key_value : torch.Tensor,
                     position_bias : Optional[torch.Tensor],
                     use_cache: bool,
-                    past_key_value,
+                    past_key_values,
                     project_q, project_k, project_v, attention_out, 
                     dim_head, num_heads, num_heads_kv,
     ):
@@ -32,8 +32,8 @@ def rekv_attention_forward(
         assert use_cache
 
         h_q = project_q(query)             # (batch, len_q, num_heads * dim_head)
-        h_k = project_k(key_value)         # (batch, len_k, num_heads * dim_head)
-        h_v = project_v(key_value)         # (batch, len_k, num_heads * dim_head)
+        h_k = project_k(key_value)         # (batch, len_k, num_heads_kv * dim_head)
+        h_v = project_v(key_value)         # (batch, len_k, num_heads_kv * dim_head)
 
         h_q = h_q.view(batch_size, len_q, num_heads, dim_head).permute(0, 2, 1, 3).contiguous()      # (batch, num_heads, len_q, dim_head)
         h_k = h_k.view(batch_size, len_k, num_heads_kv, dim_head).permute(0, 2, 1, 3).contiguous()   # (batch, num_heads_kv, len_k, dim_head)
@@ -47,9 +47,9 @@ def rekv_attention_forward(
                 position_bias._cos_cached = position_bias._cos_cached.to(h_q.device)
             if position_bias._sin_cached is not None:
                 position_bias._sin_cached = position_bias._sin_cached.to(h_q.device)
-
-        if past_key_value is None:
-            past_key_value = ContextManager(
+        
+        if past_key_values[self.layer_idx] is None:
+            past_key_values[self.layer_idx] = ContextManager(
                 position_bias,
                 n_init, n_local, 
                 block_size, max_cached_block, topk, chunk_size, exc_block_size,
@@ -57,6 +57,8 @@ def rekv_attention_forward(
                 async_global_stream,
                 pin_memory,
             )
+
+        past_key_value = past_key_values[self.layer_idx]
 
         local_q, local_k, local_v = h_q, h_k, h_v
         global_q, global_k, global_v = h_q, h_k, h_v
@@ -87,10 +89,10 @@ def rekv_attention_forward(
                 else:
                     h_k_cache = torch.cat([h_k[:,:, :n_init, :], h_k[:, :, max(0, h_k.size(-2) - n_local):, :]], dim=2)
                     h_v_cache = torch.cat([h_v[:,:, :n_init, :], h_v[:, :, max(0, h_k.size(-2) - n_local):, :]], dim=2)
-                current_key_value = (h_k_cache, h_v_cache)
+                past_key_values[self.layer_idx] = (h_k_cache, h_v_cache)
             else:
-                current_key_value = (past_k, past_v)
-
+                past_key_values[self.layer_idx] = (past_k, past_v)
+                
             """ 4. Get local QKV and apply RoPE to local QK """
             h_q_, h_k_, h_v_ = h_q, h_k, h_v
             if len_q + n_local < h_k_.size(-2):
@@ -127,24 +129,18 @@ def rekv_attention_forward(
             attn = Attn(local_h_q.shape, local_h_q.dtype, local_h_q.device)
             attn.append(local_h_q, local_h_k, local_h_v, sliding_window=n_local)
             attn.append(init_h_q, init_h_k, init_h_v, end=True, sliding_window=(len_k - len_q, n_local), complement_sliding_window=True)
-            score, _ = attn.get_result()
-
-            score = score.view(batch_size, num_heads, len_q, dim_head).permute(0, 2, 1, 3) # (batch, len_q, num_heads, dim_head)
-            score = score.reshape(batch_size, len_q, num_heads * dim_head) # (batch, len_q, num_heads * dim_head)
-            score = attention_out(score)
-
-            return score, current_key_value
-
+            o, _ = attn.get_result() 
+            
         # NOTE: Encode video, managed by the KVCacheManager
         else:
             o = past_key_value.append(
                 local_q, local_k, local_v,
                 global_q, global_k, global_v,
             )
-            o = o.view(batch_size, num_heads, len_q, dim_head).permute(0, 2, 1, 3)
-            o = o.reshape(batch_size, len_q, dim_head * num_heads)
-            o = attention_out(o)
-
-            return o, past_key_value
+            
+        o = o.view(batch_size, num_heads, len_q, dim_head).permute(0, 2, 1, 3)
+        o = o.reshape(batch_size, len_q, num_heads * dim_head)
+        o = attention_out(o)
+        return o
 
     return forward
