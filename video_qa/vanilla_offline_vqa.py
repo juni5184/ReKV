@@ -35,7 +35,7 @@ class VanillaVQA(BaseVQA):
         video = self.load_video(video_path)
         if not isinstance(video, torch.Tensor):
             video_tensor = torch.from_numpy(video)
-            video_tensor = video_tensor.permute(0, 3, 1, 2) # 없을때 40, 있을때 60 (sample 기준)
+            video_tensor = video_tensor.permute(0, 3, 1, 2) 
         else:
             video_tensor = video
 

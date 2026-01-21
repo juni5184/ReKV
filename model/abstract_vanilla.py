@@ -4,7 +4,6 @@ from logzero import logger
 
 class Abstract_Vanilla:
     processor = None
-    n_frame_tokens = None
     kv_cache = None
 
     def __init__(self, processor, n_frame_tokens, init_prompt_ids):

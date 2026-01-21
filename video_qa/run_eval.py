@@ -57,6 +57,7 @@ def eval_qaego4d(args):
             if idx == 0:
                 exec(f"head -n 1 {save_dir}/{num_chunks}_{idx}.csv > {save_dir}/results.csv")
             exec(f"tail -n +2 {save_dir}/{num_chunks}_{idx}.csv >> {save_dir}/results.csv")
+            exec(f"rm {save_dir}/{num_chunks}_{idx}.csv")
     exec(f"python video_qa/eval/eval_multiple_choice.py --save_dir {save_dir}")
 
 
@@ -101,6 +102,7 @@ def eval_mlvu(args):
             if idx == 0:
                 exec(f"head -n 1 {save_dir}/{num_chunks}_{idx}.csv > {save_dir}/results.csv")
             exec(f"tail -n +2 {save_dir}/{num_chunks}_{idx}.csv >> {save_dir}/results.csv")
+            exec(f"rm {save_dir}/{num_chunks}_{idx}.csv")
     exec(f"python video_qa/eval/eval_multiple_choice.py --save_dir {save_dir}")
 
 if __name__ == "__main__":
