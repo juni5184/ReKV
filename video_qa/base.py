@@ -13,13 +13,41 @@ from transformers import logging
 import logzero
 from logzero import logger
 
-from model import llava_onevision_rekv, llava_onevision_vanilla
+from model import (
+    llava_onevision_rekv,
+    llava_onevision_vanilla,
+    # qwen2_5vl_rekv,
+    qwen2_5vl_vanilla,
+)
 
 
 MODEL_PATH = {
-    'llava_ov_7b': '/scratch2/juni5184/model_zoo/llava-onevision-qwen2-7b-ov-hf',
-    'llava_ov_0.5b': '/scratch2/juni5184/model_zoo/llava-onevision-qwen2-0.5b-ov-hf',
-}   
+    'llava_ov_0.5b_rekv': {
+        'load_func': llava_onevision_rekv.load_model,
+        'model_path': "/scratch2/juni5184/model_zoo/llava-onevision-qwen2-0.5b-ov-hf"
+    },
+    'llava_ov_7b_rekv': {
+        'load_func': llava_onevision_rekv.load_model,
+        'model_path': "/scratch2/juni5184/model_zoo/llava-onevision-qwen2-7b-ov-hf"
+    },
+
+    'llava_ov_0.5b_vanilla': {
+        'load_func': llava_onevision_vanilla.load_model,
+        'model_path': "/scratch2/juni5184/model_zoo/llava-onevision-qwen2-0.5b-ov-hf"
+    },
+    'llava_ov_7b_vanilla': {
+        'load_func': llava_onevision_vanilla.load_model,
+        'model_path': "/scratch2/juni5184/model_zoo/llava-onevision-qwen2-7b-ov-hf"
+    },
+    'qwen2_5_vl_3b_vanilla': {
+        'load_func': qwen2_5vl_vanilla.load_model,
+        'model_path': "/scratch2/juni5184/model_zoo/Qwen2.5-VL-3B-Instruct"
+    },
+    'qwen2_5_vl_7b_vanilla': {
+        'load_func': qwen2_5vl_vanilla.load_model,
+        'model_path': "/scratch2/juni5184/model_zoo/Qwen2.5-VL-7B-Instruct"
+    },
+}
 
 class BaseVQA:
     def __init__(self, anno, save_dir, sample_fps,
@@ -172,17 +200,15 @@ def work(QA_CLASS):
 
     # VideoQA model
     if 'rekv' in args.solver:
-        model_path = MODEL_PATH[args.model]
-        videoqa_model, videoqa_processor = llava_onevision_rekv.load_model(
-            model_path=model_path,
+        videoqa_model, videoqa_processor = MODEL_PATH[f'{args.model}_rekv']['load_func'](
+            model_path=MODEL_PATH[f'{args.model}_rekv']['model_path'],
             n_local=args.n_local,
             topk=args.retrieve_size,
             chunk_size=args.retrieve_chunk_size,
         )
     elif 'vanilla' in args.solver:
-        model_path = MODEL_PATH[args.model]
-        videoqa_model, videoqa_processor = llava_onevision_vanilla.load_model(
-            model_path=model_path,
+        videoqa_model, videoqa_processor = MODEL_PATH[f'{args.model}_vanilla']['load_func'](
+            model_path=MODEL_PATH[f'{args.model}_vanilla']['model_path'],
         )
     else:
         raise ValueError(f'Invalid solver: {args.solver}')
