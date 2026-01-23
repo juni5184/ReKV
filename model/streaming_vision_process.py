@@ -327,7 +327,6 @@ def fetch_video(
     video, sample_fps = _read_video_decord(ele)
 
     nframes, _, height, width = video.shape
-    print("nframes, _, height, width:", nframes, _ , height, width)
 
     # Compute effective_nframes for resize calculation
     # This is the key optimization: use video_chunk_frames instead of total nframes

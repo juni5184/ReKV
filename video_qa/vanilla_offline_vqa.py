@@ -1,11 +1,9 @@
-import torch
-from logzero import logger
 import numpy as np
 import torch
 from decord import VideoReader, cpu
+from logzero import logger
 
 from video_qa.base import BaseVQA, work
-
 
 class VanillaVQA(BaseVQA):
     def video_close_qa(self, question, candidates, correct_choice):
@@ -19,6 +17,12 @@ class VanillaVQA(BaseVQA):
         }
 
     def load_video(self, video_path):
+        # for qwen2.5-vl-vanilla model
+        if hasattr(self.qa_model, "prepare_video_tensor"):
+            return self.qa_model.prepare_video_tensor(
+                video_path=video_path,
+                fps=self.sample_fps,
+            )
         vr = VideoReader(video_path, ctx=cpu(0))
         total_frames = len(vr)
         if total_frames <= self.retrieve_size:
@@ -33,15 +37,10 @@ class VanillaVQA(BaseVQA):
         video_path = video_sample['video_path']
         video_path = video_path.replace('data', '/scratch2/juni5184/datasets')
         video = self.load_video(video_path)
-        if not isinstance(video, torch.Tensor):
-            video_tensor = torch.from_numpy(video)
-            video_tensor = video_tensor.permute(0, 3, 1, 2) 
-        else:
-            video_tensor = video
-
+        
         self.qa_model.clear_cache()
         self.qa_model.encode_init_prompt()
-        self.qa_model.encode_video(video_tensor)
+        self.qa_model.encode_video(video)
 
         # Process each question using the same video KV-cache
         for sample in video_sample['conversations']:

@@ -2,7 +2,7 @@
     {
         "video_id": "5ccb96c6-714f-4a93-9352-540899b27a4d",
         "video_path": "data/qaego4d/videos/5ccb96c6-714f-4a93-9352-540899b27a4d.mp4",
-        "duration": 1199.9666666666667,
+        "duration": 1199.9666666666667,                 
         "conversations": [
             {
                 "question": "Where did I put the dog fur?",
