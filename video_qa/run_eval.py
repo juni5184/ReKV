@@ -40,6 +40,7 @@ def eval_qaego4d(args):
                 "--num_chunks", str(num_chunks),
                 "--chunk_idx", str(idx),
                 "--solver", str(args.solver),
+                "--sliding_window", str(args.sliding_window),
             ]
             p = multiprocessing.Process(
                 target=exec,
@@ -89,6 +90,7 @@ def eval_mlvu(args):
                 "--num_chunks", str(num_chunks),
                 "--chunk_idx", str(idx),
                 "--solver", str(args.solver),
+                "--sliding_window", str(args.sliding_window),
             ]
             p = multiprocessing.Process(
                 target=exec,
@@ -118,11 +120,12 @@ def eval_videomme(args):
     solver = f'{args.solver}_offline_vqa'
     if args.sample:
         anno_path = "data/videomme/test_short_sample.json"
+        # anno_path = "data/videomme/test_long_sample.json"
     else:
-        anno_path = "data/videomme/test_short.json" # now in tmux 0
+        anno_path = "data/videomme/test_short.json"
         # anno_path = "data/videomme/test_medium.json"
         # anno_path = "data/videomme/test_long.json"
-        # anno_path = "data/videomme/test.json" # now in tmux 1
+        # anno_path = "data/videomme/test.json"
     if not args.only_eval:
         processes = []
         for idx in range(0, num_chunks):
@@ -138,6 +141,7 @@ def eval_videomme(args):
                 "--num_chunks", str(num_chunks),
                 "--chunk_idx", str(idx),
                 "--solver", str(args.solver),
+                "--sliding_window", str(args.sliding_window),
             ]
             p = multiprocessing.Process(
                 target=exec,
@@ -171,6 +175,7 @@ if __name__ == "__main__":
     parser.add_argument("--debug", type=str, default='false')
     parser.add_argument("--solver", type=str, default='vanilla', choices=['vanilla', 'rekv'])
     parser.add_argument("--sample", action="store_true")
+    parser.add_argument("--sliding_window", action="store_true")
     args = parser.parse_args()
 
     if args.debug == 'true':

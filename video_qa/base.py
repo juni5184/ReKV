@@ -189,6 +189,7 @@ def work(QA_CLASS):
     parser.add_argument("--retrieve_chunk_size", type=int, default=1)
     parser.add_argument("--solver", type=str, default='vanilla', choices=['vanilla', 'rekv'])
     parser.add_argument("--debug", type=str2bool, nargs='?', const=True, default=True)
+    parser.add_argument("--sliding_window", type=str2bool, nargs='?', const=True, default=False)
     args = parser.parse_args()
 
     if not args.debug:
@@ -213,6 +214,9 @@ def work(QA_CLASS):
         videoqa_model, videoqa_processor = MODEL_PATH[f'{args.model}_vanilla']['load_func'](
             model_path=MODEL_PATH[f'{args.model}_vanilla']['model_path'],
         )
+        # Enable sliding window if requested
+        if args.sliding_window and hasattr(videoqa_model, 'set_sliding_window'):
+            videoqa_model.set_sliding_window(True, n_local=args.n_local)
     else:
         raise ValueError(f'Invalid solver: {args.solver}')
 

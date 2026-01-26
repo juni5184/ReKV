@@ -18,6 +18,10 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
         self.kv_cache = None
         self.processor = None
         self._rope_deltas = None  # Track rope deltas for position continuation
+        
+        # Sliding window attention settings
+        self.use_sliding_window = False
+        self.n_local = 15000  # default window size
 
     def clear_cache(self):
         self.kv_cache = None
@@ -27,6 +31,34 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
             self.model.rope_deltas = None
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()
+
+    def set_sliding_window(self, enable: bool, n_local: int = 1024):
+        """Enable or disable sliding window attention.
+
+        Args:
+            enable: True for sliding window, False for full attention
+            n_local: Number of tokens to keep in KV cache when enabled
+        """
+        self.use_sliding_window = enable
+        self.n_local = n_local
+        mode = f"sliding window (size={n_local})" if enable else "full attention"
+        logger.info(f"Attention mode: {mode}")
+
+    def _truncate_kv_cache(self, past_key_values):
+        """Truncate KV cache to n_local if sliding window is enabled."""
+        if not self.use_sliding_window or past_key_values is None:
+            return past_key_values
+
+        # Create a new DynamicCache with truncated values
+        truncated_cache = DynamicCache()
+        for layer_idx in range(len(past_key_values)):
+            k, v = past_key_values[layer_idx] # (batch_size, num_heads, seq_len, head_dim)
+            truncated_cache.update(
+                k[:, :, -self.n_local:, :],
+                v[:, :, -self.n_local:, :],
+                layer_idx
+            )
+        return truncated_cache
 
     def get_prompt(self, query, mc=False):
         # The video is already followed by the user message in encode_video
@@ -221,7 +253,7 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
             input_ids=question_ids,
             position_ids=question_pos_ids,
             use_cache=True,
-            past_key_values=self.kv_cache,
+            past_key_values=self._truncate_kv_cache(self.kv_cache),
         )
         past_key_values = out.past_key_values
         past_seq_len = past_key_values[0][0].shape[2]
@@ -239,7 +271,7 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
                     inputs_embeds=inputs_embeds,
                     position_ids=prompt_pos_ids,
                     use_cache=True,
-                    past_key_values=past_key_values,
+                    past_key_values=self._truncate_kv_cache(past_key_values),
                 )
                 past_key_values = out.past_key_values
                 past_seq_len = past_key_values[0][0].shape[2]
@@ -252,7 +284,7 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
                     input_ids=torch.as_tensor([[token]], device=device),
                     position_ids=token_pos_ids,
                     use_cache=True,
-                    past_key_values=past_key_values,
+                    past_key_values=self._truncate_kv_cache(past_key_values),
                 )
                 past_key_values = out.past_key_values
                 past_seq_len = past_key_values[0][0].shape[2]
