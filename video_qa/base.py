@@ -70,7 +70,10 @@ class BaseVQA:
         if num_chunks is not None:
             anno = self.get_chunk(anno, num_chunks, chunk_idx)
         self.anno = anno
-        self.eval_grounding = 'temporal_windows' in anno[0]['conversations'][0]
+        if 'conversations' in anno[0]:
+            self.eval_grounding = 'temporal_windows' in anno[0]['conversations'][0]
+        else:
+            self.eval_grounding = False
 
         self.save_dir = save_dir
         self.choice_letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']

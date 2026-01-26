@@ -34,8 +34,13 @@ class VanillaVQA(BaseVQA):
     @torch.inference_mode()
     def analyze_a_video(self, video_sample):
         # load and preprocess video frames for QA
-        video_path = video_sample['video_path']
-        video_path = video_path.replace('data', '/scratch2/juni5184/datasets')
+        if 'video_path' in video_sample:
+            video_path = video_sample['video_path']
+            video_path = video_path.replace('data', '/scratch2/juni5184/datasets')
+        else:
+            video_path = f'/scratch2/jshyun/datasets/Video-MME/videos/{video_sample["videoID"]}.mp4'
+            print("video_path: ", video_path)
+
         video = self.load_video(video_path)
         
         self.qa_model.clear_cache()
@@ -43,31 +48,53 @@ class VanillaVQA(BaseVQA):
         self.qa_model.encode_video(video)
 
         # Process each question using the same video KV-cache
-        for sample in video_sample['conversations']:
-            logger.debug(f'sample: {sample}')
-            question = sample['question']
-            answer = sample['answer']
-            
-            # QA
-            if 'choices' in sample:  # CloseQA
-                choices = sample['choices']
-                if answer is None:  # FIXME: an ugly fix for some benchmarks do not provide GT
-                    answer = choices[0]
-                correct_choice = self.choice_letters[choices.index(answer)]
-                qa_results = self.video_close_qa(question, choices, correct_choice)
-                self.record[(self.retrieve_size, self.chunk_size)].append({
-                    'video_id': video_sample['video_id'],
-                    'question': question,
-                    'choices': choices,
-                    'answer': answer,
-                    'correct_choice': correct_choice,
-                    'pred_answer': qa_results['pred_answer'],
-                    'pred_choice': qa_results['pred_choice'],
-                    'qa_acc': qa_results['acc'] * 100,
-                })
+        if 'conversations' in video_sample:
+            for sample in video_sample['conversations']:
+                logger.debug(f'sample: {sample}')
+                question = sample['question']
+                answer = sample['answer']
+                
+                # QA
+                if 'choices' in sample:  # CloseQA
+                    choices = sample['choices']
+                    if answer is None:  # FIXME: an ugly fix for some benchmarks do not provide GT
+                        answer = choices[0]
+                    correct_choice = self.choice_letters[choices.index(answer)]
+                    qa_results = self.video_close_qa(question, choices, correct_choice)
+                    self.record[(self.retrieve_size, self.chunk_size)].append({
+                        'video_id': video_sample['video_id'],
+                        'question': question,
+                        'choices': choices,
+                        'answer': answer,
+                        'correct_choice': correct_choice,
+                        'pred_answer': qa_results['pred_answer'],
+                        'pred_choice': qa_results['pred_choice'],
+                        'qa_acc': qa_results['acc'] * 100,
+                    })
 
-            if 'question_type' in sample:
-                self.record[(self.retrieve_size, self.chunk_size)][-1]['task'] = sample['question_type']
+                if 'question_type' in sample:
+                    self.record[(self.retrieve_size, self.chunk_size)][-1]['task'] = sample['question_type']
+        else:
+            # for videomme
+            question = video_sample['question']
+            answer = video_sample['answer']
+            choices = video_sample['options']
+
+            if isinstance(answer, str) and answer.strip() in self.choice_letters:
+                correct_choice = answer.strip()
+                answer_text = choices[self.choice_letters.index(correct_choice)].strip()
+
+            qa_results = self.video_close_qa(question, choices, correct_choice)
+            self.record[(self.retrieve_size, self.chunk_size)].append({
+                'video_id': video_sample.get('videoID', video_sample.get('video_id', None)),
+                'question': question,
+                'choices': choices,
+                'answer': answer_text,
+                'correct_choice': correct_choice,
+                'pred_answer': qa_results['pred_answer'],
+                'pred_choice': qa_results['pred_choice'],
+                'qa_acc': qa_results['acc'] * 100,
+            }) 
 
 if __name__ == "__main__":
     work(VanillaVQA)

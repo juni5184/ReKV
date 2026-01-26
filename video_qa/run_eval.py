@@ -110,14 +110,19 @@ def eval_mlvu(args):
             exec(f"rm {save_dir}/{num_chunks}_{idx}.csv")
     exec(f"python video_qa/eval/eval_multiple_choice.py --save_dir {save_dir}")
 
-def eval_egoschema(args):
+
+def eval_videomme(args):
     num_chunks = args.num_chunks
-    save_dir = f"results/{args.model}/egoschema/{args.retrieve_size}-{args.sample_fps}"
+    save_dir = f"results/{args.model}/videomme/{args.retrieve_size}-{args.sample_fps}"
+    os.makedirs(save_dir, exist_ok=True)
     solver = f'{args.solver}_offline_vqa'
     if args.sample:
-        anno_path = "data/egoschema/full_sample.json"
+        anno_path = "data/videomme/test_short_sample.json"
     else:
-        anno_path = "data/egoschema/full.json"
+        anno_path = "data/videomme/test_short.json" # now in tmux 0
+        # anno_path = "data/videomme/test_medium.json"
+        # anno_path = "data/videomme/test_long.json"
+        # anno_path = "data/videomme/test.json" # now in tmux 1
     if not args.only_eval:
         processes = []
         for idx in range(0, num_chunks):
@@ -157,7 +162,7 @@ def eval_egoschema(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="llava_ov_7b", choices=['llava_ov_0.5b', 'llava_ov_7b', 'qwen2_5_vl_3b', 'qwen2_5_vl_7b'])
-    parser.add_argument("--dataset", type=str, default=None, choices=['qaego4d', 'mlvu', 'egoschema'])
+    parser.add_argument("--dataset", type=str, default=None, choices=['qaego4d', 'mlvu', 'videomme'])
     parser.add_argument("--num_chunks", type=int, default=1)
     parser.add_argument("--only_eval", action="store_true")
     parser.add_argument("--sample_fps", type=float, default=1)
@@ -181,7 +186,7 @@ if __name__ == "__main__":
     func_dic = {
         'qaego4d': eval_qaego4d,
         'mlvu': eval_mlvu,
-        'egoschema': eval_egoschema,
+        'videomme': eval_videomme,
     }
     
     if args.dataset in func_dic:
