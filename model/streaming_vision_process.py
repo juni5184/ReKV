@@ -25,27 +25,22 @@ from PIL import Image
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 
-from model.constants import VIDEO_MAX_TOKEN_NUM
-
 
 logger = logging.getLogger(__name__)
 
 # Image processing constants
-MAX_RATIO = 200
 IMAGE_FACTOR = 28
 MIN_PIXELS = 4 * 28 * 28
 MAX_PIXELS = 16384 * 28 * 28
+MAX_RATIO = 200
 
 # Video processing constants
-VIDEO_MIN_TOKEN_NUM = 128
-VIDEO_MIN_PIXELS = VIDEO_MIN_TOKEN_NUM * 28 * 28 # 100352
-VIDEO_MAX_PIXELS = VIDEO_MAX_TOKEN_NUM * 28 * 28 # 602112
-
-FPS = 2.0
+VIDEO_MIN_PIXELS = 128 * 28 * 28
+VIDEO_MAX_PIXELS = 768 * 28 * 28
 FRAME_FACTOR = 2
+FPS = 2.0
 FPS_MIN_FRAMES = 4
 FPS_MAX_FRAMES = int(os.environ.get('FPS_MAX_FRAMES', 768))
-
 VIDEO_TOTAL_PIXELS = int(float(os.environ.get('VIDEO_MAX_PIXELS', 128000 * 28 * 28 * 0.9)))
 
 logger.info(f"Streaming video processing initialized: FPS_MAX_FRAMES={FPS_MAX_FRAMES}, VIDEO_TOTAL_PIXELS={VIDEO_TOTAL_PIXELS}")
@@ -258,8 +253,6 @@ def _read_video_decord(
     video_path = ele["video"]
     st = time.time()
     vr = decord.VideoReader(video_path)
-
-    # 18500, 25.0
     total_frames, video_fps = len(vr), vr.get_avg_fps()
 
     # Calculate frame range (handles video_start/video_end)
@@ -337,11 +330,9 @@ def fetch_video(
         effective_nframes = nframes
 
     # Calculate max_pixels based on effective_nframes
-    min_pixels = ele.get("min_pixels", VIDEO_MIN_PIXELS) # 128 * 28 * 28 = 100352
-    total_pixels = ele.get("total_pixels", VIDEO_TOTAL_PIXELS) # 128000 * 28 * 28 * 0.9 = 90316800
-    # max_pixels = max(min(VIDEO_MAX_PIXELS, total_pixels / effective_nframes * FRAME_FACTOR), int(min_pixels * 1.05))
-    max_pixels = ele.get("max_pixels", max(min(VIDEO_MAX_PIXELS, total_pixels / effective_nframes * FRAME_FACTOR), int(min_pixels * 1.05)))
-    print("min, max_pixels:", min_pixels, max_pixels)
+    min_pixels = ele.get("min_pixels", VIDEO_MIN_PIXELS)
+    total_pixels = ele.get("total_pixels", VIDEO_TOTAL_PIXELS)
+    max_pixels = max(min(VIDEO_MAX_PIXELS, total_pixels / effective_nframes * FRAME_FACTOR), int(min_pixels * 1.05))
 
     # Allow user override but warn if exceeding limit
     max_pixels_supposed = ele.get("max_pixels", max_pixels)

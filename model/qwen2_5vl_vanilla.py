@@ -2,18 +2,14 @@ import torch
 from logzero import logger
 
 from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
-
-from model.constants import (
-    VIDEO_MAXFRAMES,
-    VIDEO_PLACEHOLDER,
-    FPS_MIN_FRAMES,
-)
-
-# Re-export VIDEO_MAXFRAMES for backward compatibility with streaming_vision_process.py
-__all__ = ['VIDEO_MAXFRAMES', 'VIDEO_PLACEHOLDER', 'Qwen2_5VL_Vanilla', 'load_model']
+from transformers.cache_utils import DynamicCache
 
 # System prompt template - <|im_start|>user will be followed by video
 SYSTEM_PROMPT_TEMPLATE = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+VIDEO_PLACEHOLDER = "<|vision_start|><|video_pad|><|vision_end|>"
+FPS_MIN_FRAMES = 4
+VIDEO_MAXFRAMES = 768
+
 
 
 class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
@@ -50,7 +46,6 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
         # Tokenize system prompt
         system_tokens = self.processor.tokenizer(SYSTEM_PROMPT_TEMPLATE, return_tensors="pt")
         input_ids = system_tokens["input_ids"].to(self.device)
-
         seq_len = input_ids.shape[1]
 
         # For text-only, use 1D positions (same across all 3 dimensions)
@@ -129,7 +124,6 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
             raise RuntimeError("kv_cache is empty. Call encode_init_prompt() before encode_video().")
 
         num_frames = video.shape[0]
-        logger.debug(f"num_frames: {num_frames}")
         if num_frames <= num_sampled_frames:
             video_sampled = video
         else:
