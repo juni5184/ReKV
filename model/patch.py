@@ -33,6 +33,8 @@ def patch_hf(
 ):
     attn_kwargs.update(kwargs)
     from transformers.models.llama.modeling_llama import BaseModelOutputWithPast
+    from transformers.models.qwen2.modeling_qwen2 import Qwen2Model
+    from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VLTextModel
 
     def model_forward(
         self,
@@ -55,15 +57,28 @@ def patch_hf(
             
         hidden_states = inputs_embeds
         
-        for decoder_layer in self.layers[:self.config.num_hidden_layers]:
-            hidden_states = decoder_layer(
-                hidden_states,
-                attention_mask=attention_mask,
-                position_ids=self.position_bias,
-                past_key_values=past_key_values,
-                use_cache=use_cache,
-                **kwargs,
-            )
+        if isinstance(model, Qwen2Model):
+            for decoder_layer in self.layers[:self.config.num_hidden_layers]:
+                hidden_states = decoder_layer(
+                    hidden_states,
+                    attention_mask=attention_mask,
+                    position_ids=self.position_bias,
+                    past_key_values=past_key_values,
+                    use_cache=use_cache,
+                    **kwargs,
+                )
+
+        elif isinstance(model, Qwen2_5_VLTextModel):
+            for decoder_layer in self.layers[:self.config.num_hidden_layers]:
+                layer_outputs = decoder_layer(
+                    hidden_states,
+                    attention_mask=attention_mask,
+                    position_ids=self.position_bias,
+                    past_key_values=past_key_values,
+                    use_cache=use_cache,
+                    **kwargs,
+                )
+                hidden_states = layer_outputs[0]
 
         hidden_states = self.norm(hidden_states)
 
@@ -73,23 +88,51 @@ def patch_hf(
         )
 
     forward = huggingface_forward(rekv_attention_forward(**attn_kwargs))
-   
-    Attention = model.layers[0].self_attn.__class__ # Qwen2Attention
-    Model = model.__class__ # Qwen2Model (Qwen2ForCausalLM)
-    hf_rope = model.rotary_emb # Qwen2RotaryEmbedding
-    
-    base = hf_rope.config.rope_theta
-    distance_scale = distance_scale if distance_scale is not None else 1.0
-    partial_rotary_factor = hf_rope.config.partial_rotary_factor if hasattr(hf_rope.config, "partial_rotary_factor") else 1.0
-    dim = int((hf_rope.config.hidden_size // hf_rope.config.num_attention_heads) * partial_rotary_factor)
 
-    rope = RotaryEmbeddingESM(
-        dim=dim,
-        base=base,
-        distance_scale=distance_scale
-    )
-    
-    model.position_bias = rope
+    if isinstance(model, Qwen2Model): # Llava-onevision
+        Attention = model.layers[0].self_attn.__class__ # Qwen2Attention
+        Model = model.__class__ # Qwen2Model (Qwen2ForCausalLM)
+        hf_rope = model.rotary_emb # Qwen2RotaryEmbedding
+        
+        base = hf_rope.config.rope_theta
+        distance_scale = distance_scale if distance_scale is not None else 1.0
+        partial_rotary_factor = hf_rope.config.partial_rotary_factor if hasattr(hf_rope.config, "partial_rotary_factor") else 1.0
+        dim = int((hf_rope.config.hidden_size // hf_rope.config.num_attention_heads) * partial_rotary_factor)
+
+        rope = RotaryEmbeddingESM(
+            dim=dim,
+            base=base,
+            distance_scale=distance_scale
+        )
+        
+        model.position_bias = rope
+
+    elif isinstance(model, Qwen2_5_VLTextModel): # Qwen2.5VL
+        Attention = model.layers[0].self_attn.__class__ 
+        Model = model.__class__
+        hf_rope = model.rotary_emb
+        
+        base = hf_rope.config.rope_theta
+        distance_scale = distance_scale if distance_scale is not None else 1.0
+        partial_rotary_factor = hf_rope.config.partial_rotary_factor if hasattr(hf_rope.config, "partial_rotary_factor") else 1.0
+        dim = int((hf_rope.config.hidden_size // hf_rope.config.num_attention_heads) * partial_rotary_factor)
+
+        #TODO: Multi-modal rotary embedding
+        # multi_modal_rope = MultiModalRotaryEmbedding(
+        #     dim=dim,
+        #     base=base,
+        #     distance_scale=distance_scale
+        # )
+        rope = RotaryEmbeddingESM(
+            dim=dim,
+            base=base,
+            distance_scale=distance_scale
+        )
+        
+        model.position_bias = rope
+    else:
+        raise ValueError(f"Only supports Qwen2 models, not {model.__class__.__name__}.")
+
 
     def set_forward(m):
         if isinstance(m, Attention):

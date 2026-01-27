@@ -16,8 +16,8 @@ from logzero import logger
 from model import (
     llava_onevision_rekv,
     llava_onevision_vanilla,
-    # qwen2_5vl_rekv,
     qwen2_5vl_vanilla,
+    qwen2_5vl_rekv,
 )
 
 
@@ -45,6 +45,15 @@ MODEL_PATH = {
     },
     'qwen2_5_vl_7b_vanilla': {
         'load_func': qwen2_5vl_vanilla.load_model,
+        'model_path': "/scratch2/juni5184/model_zoo/Qwen2.5-VL-7B-Instruct"
+    },
+
+    'qwen2_5_vl_3b_rekv': {
+        'load_func': qwen2_5vl_rekv.load_model,
+        'model_path': "/scratch2/juni5184/model_zoo/Qwen2.5-VL-3B-Instruct"
+    },
+    'qwen2_5_vl_7b_rekv': {
+        'load_func': qwen2_5vl_rekv.load_model,
         'model_path': "/scratch2/juni5184/model_zoo/Qwen2.5-VL-7B-Instruct"
     },
 }
