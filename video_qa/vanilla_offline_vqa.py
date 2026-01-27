@@ -17,12 +17,13 @@ class VanillaVQA(BaseVQA):
         }
 
     def load_video(self, video_path):
-        # for qwen2.5-vl-vanilla model
+        # For Qwen2.5VL
         if hasattr(self.qa_model, "prepare_video_tensor"):
             return self.qa_model.prepare_video_tensor(
                 video_path=video_path,
                 fps=self.sample_fps,
             )
+        # For other models
         vr = VideoReader(video_path, ctx=cpu(0))
         total_frames = len(vr)
         if total_frames <= self.retrieve_size:
@@ -39,10 +40,12 @@ class VanillaVQA(BaseVQA):
             video_path = video_path.replace('data', '/scratch2/juni5184/datasets')
         else:
             video_path = f'/scratch2/jshyun/datasets/Video-MME/videos/{video_sample["videoID"]}.mp4'
-            print("video_path: ", video_path)
-
-        video = self.load_video(video_path)
         
+        video = self.load_video(video_path)
+        if video is None:
+            logger.error(f"Video not found: {video_path}")
+            return
+
         self.qa_model.clear_cache()
         self.qa_model.encode_init_prompt()
         self.qa_model.encode_video(video)
