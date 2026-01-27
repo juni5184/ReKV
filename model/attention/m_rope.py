@@ -146,12 +146,15 @@ class MultiModalRotaryEmbedding(nn.Module):
         Returns:
             Tuple of (cos, sin) tensors of shape (3, batch_size, seq_len, dim)
         """
+        # Move inv_freq to target device if needed
+        inv_freq = self.inv_freq.to(device)
+
         # Expand inv_freq for 3D position computation: (3, batch, dim//2, 1)
-        inv_freq_expanded = self.inv_freq[None, None, :, None].float()
+        inv_freq_expanded = inv_freq[None, None, :, None].float()
         inv_freq_expanded = inv_freq_expanded.expand(3, position_ids.shape[1], -1, 1)
 
         # Expand position_ids: (3, batch, 1, seq_len)
-        position_ids_expanded = position_ids[:, :, None, :].float()
+        position_ids_expanded = position_ids[:, :, None, :].float().to(device)
 
         # Compute frequencies via matrix multiplication
         # (3, batch, dim//2, 1) @ (3, batch, 1, seq_len) -> (3, batch, dim//2, seq_len)
@@ -225,11 +228,18 @@ class MultiModalRotaryEmbedding(nn.Module):
         Returns:
             Tuple of (cos, sin) for positions [0, seq_len)
         """
-        if seq_len > self._seq_len_cached:
-            self._seq_len_cached = seq_len
+        # Check if we need to recompute due to length or device change
+        need_recompute = (
+            seq_len > self._seq_len_cached or
+            self._cos_cached is None or
+            self._cos_cached.device != device
+        )
+
+        if need_recompute:
+            self._seq_len_cached = max(seq_len, self._seq_len_cached)
 
             # Create 1D positions and replicate across 3 dimensions
-            positions = torch.arange(seq_len, device=device, dtype=torch.long)
+            positions = torch.arange(self._seq_len_cached, device=device, dtype=torch.long)
             position_ids = positions.unsqueeze(0).unsqueeze(0).expand(3, 1, -1)
 
             self._cos_cached, self._sin_cached = self._compute_cos_sin(
@@ -273,6 +283,157 @@ class MultiModalRotaryEmbedding(nn.Module):
         )
 
         return (x * cos_combined) + (rotate_half(x) * sin_combined)
+
+    # ============================================================
+    # Methods for compatibility with RotaryEmbeddingESM interface
+    # (used by rekv_attention.py and kv_cache_manager.py)
+    # ============================================================
+
+    def _update_cos_sin_tables(self, x: torch.Tensor, seq_dim: int = -2):
+        """Update cached cos/sin tables based on input tensor shape.
+
+        For M-RoPE with text-only tokens, all 3 position dimensions are identical.
+        This maintains compatibility with RotaryEmbeddingESM interface.
+
+        Args:
+            x: Input tensor to determine sequence length from
+            seq_dim: Dimension containing sequence length
+
+        Returns:
+            Tuple of (cos_cached, sin_cached)
+        """
+        seq_len = x.size(seq_dim)
+        return self.get_cos_sin_cache(seq_len, x.device, x.dtype)
+
+    def _update_cos_sin_tables_len(
+        self,
+        seq_len: int,
+        device: torch.device,
+        dim: int = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Update cached cos/sin tables for a given sequence length.
+
+        Compatible with RotaryEmbeddingESM interface.
+
+        Args:
+            seq_len: Sequence length to cache
+            device: Target device
+            dim: Ignored for M-RoPE (kept for interface compatibility)
+
+        Returns:
+            Tuple of (cos_cached, sin_cached)
+        """
+        return self.get_cos_sin_cache(seq_len, device, torch.float32)
+
+    def apply_rotary_pos_emb(
+        self,
+        x: torch.Tensor,
+        length: int,
+        right: int,
+        cos: torch.Tensor,
+        sin: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply rotary position embedding to a tensor slice.
+
+        For M-RoPE, combines the 3 position dimensions since text tokens
+        use identical positions across all dimensions.
+
+        Args:
+            x: Input tensor of shape (batch, heads, seq_len, head_dim)
+            length: Length of the slice to rotate
+            right: Right boundary index
+            cos: Cached cosine values of shape (3, batch, seq_len, dim)
+            sin: Cached sine values of shape (3, batch, seq_len, dim)
+
+        Returns:
+            Rotated tensor
+        """
+        dtype = x.dtype
+
+        # Extract the position slice
+        # cos/sin shape: (3, batch, seq_len, dim)
+        cos_slice = cos[:, :, right-length:right, :]
+        sin_slice = sin[:, :, right-length:right, :]
+
+        # Combine sections for 1D positions (all 3 dims identical for text)
+        mrope_section_doubled = self.mrope_section * 2
+        cos_combined = torch.cat(
+            [m[i % 3] for i, m in enumerate(cos_slice.split(mrope_section_doubled, dim=-1))],
+            dim=-1
+        ).unsqueeze(1)  # (batch, 1, seq_len, dim)
+        sin_combined = torch.cat(
+            [m[i % 3] for i, m in enumerate(sin_slice.split(mrope_section_doubled, dim=-1))],
+            dim=-1
+        ).unsqueeze(1)  # (batch, 1, seq_len, dim)
+
+        return ((x.float() * cos_combined) + (rotate_half(x).float() * sin_combined)).to(dtype)
+
+    def apply_rotary_pos_emb_one_angle(
+        self,
+        x: torch.Tensor,
+        index: int,
+    ) -> torch.Tensor:
+        """Apply rotary embedding at a single angle/position.
+
+        Used for init tokens in ReKV attention where all init tokens
+        share the same position embedding (infinite-LM style).
+
+        Args:
+            x: Input tensor
+            index: Position index to use
+
+        Returns:
+            Rotated tensor
+        """
+        dtype = x.dtype
+        cos, sin = self._update_cos_sin_tables_len(index, x.device)
+
+        # Extract single position (index-1 to index for the last position)
+        # cos/sin shape: (3, batch, seq_len, dim)
+        cos_slice = cos[:, :, index-1:index, :]
+        sin_slice = sin[:, :, index-1:index, :]
+
+        # Combine sections for single position
+        mrope_section_doubled = self.mrope_section * 2
+        cos_combined = torch.cat(
+            [m[i % 3] for i, m in enumerate(cos_slice.split(mrope_section_doubled, dim=-1))],
+            dim=-1
+        ).unsqueeze(1)  # (batch, 1, 1, dim)
+        sin_combined = torch.cat(
+            [m[i % 3] for i, m in enumerate(sin_slice.split(mrope_section_doubled, dim=-1))],
+            dim=-1
+        ).unsqueeze(1)  # (batch, 1, 1, dim)
+
+        return ((x.float() * cos_combined) + (rotate_half(x).float() * sin_combined)).to(dtype)
+
+    def __call__(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        seq_dim: int = -2,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Apply rotary embeddings to query and key tensors.
+
+        Compatible with RotaryEmbeddingESM's forward interface.
+        For text-only sequences, uses sequential 1D positions (same across all 3 dims).
+
+        Args:
+            q: Query tensor of shape (batch, heads, seq_len, head_dim)
+            k: Key tensor of shape (batch, heads, seq_len, head_dim)
+            seq_dim: Dimension containing sequence length
+
+        Returns:
+            Tuple of rotated (query, key) tensors
+        """
+        self._cos_cached, self._sin_cached = self._update_cos_sin_tables(k, seq_dim=seq_dim)
+
+        q_len = q.size(seq_dim)
+        k_len = k.size(seq_dim)
+
+        return (
+            self.apply_rotary_pos_emb(q, q_len, k_len, self._cos_cached, self._sin_cached),
+            self.apply_rotary_pos_emb(k, k_len, k_len, self._cos_cached, self._sin_cached),
+        )
 
 
 def create_multimodal_rope_from_config(config) -> MultiModalRotaryEmbedding:

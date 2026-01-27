@@ -1,6 +1,6 @@
 import torch
 
-from model.attention import RotaryEmbeddingESM, rekv_attention_forward
+from model.attention import RotaryEmbeddingESM, MultiModalRotaryEmbedding, rekv_attention_forward
 
 def huggingface_forward(forward):
     def hf_forward(
@@ -57,7 +57,7 @@ def patch_hf(
             
         hidden_states = inputs_embeds
         
-        if isinstance(model, Qwen2Model):
+        if isinstance(model, Qwen2Model): # llava-onevision
             for decoder_layer in self.layers[:self.config.num_hidden_layers]:
                 hidden_states = decoder_layer(
                     hidden_states,
@@ -68,7 +68,7 @@ def patch_hf(
                     **kwargs,
                 )
 
-        elif isinstance(model, Qwen2_5_VLTextModel):
+        elif isinstance(model, Qwen2_5_VLTextModel): # qwen2.5vl
             for decoder_layer in self.layers[:self.config.num_hidden_layers]:
                 layer_outputs = decoder_layer(
                     hidden_states,
@@ -104,34 +104,36 @@ def patch_hf(
             base=base,
             distance_scale=distance_scale
         )
-        
         model.position_bias = rope
 
     elif isinstance(model, Qwen2_5_VLTextModel): # Qwen2.5VL
-        Attention = model.layers[0].self_attn.__class__ 
+        Attention = model.layers[0].self_attn.__class__
         Model = model.__class__
         hf_rope = model.rotary_emb
-        
+
         base = hf_rope.config.rope_theta
-        distance_scale = distance_scale if distance_scale is not None else 1.0
         partial_rotary_factor = hf_rope.config.partial_rotary_factor if hasattr(hf_rope.config, "partial_rotary_factor") else 1.0
         dim = int((hf_rope.config.hidden_size // hf_rope.config.num_attention_heads) * partial_rotary_factor)
 
-        #TODO: Multi-modal rotary embedding
-        # multi_modal_rope = MultiModalRotaryEmbedding(
-        #     dim=dim,
-        #     base=base,
-        #     distance_scale=distance_scale
-        # )
-        rope = RotaryEmbeddingESM(
+        # Get mrope_section from config if available
+        mrope_section = None
+        attention_scaling = 1.0
+        if hasattr(hf_rope.config, "rope_scaling") and hf_rope.config.rope_scaling is not None:
+            if "mrope_section" in hf_rope.config.rope_scaling:
+                mrope_section = hf_rope.config.rope_scaling["mrope_section"]
+            if "factor" in hf_rope.config.rope_scaling:
+                attention_scaling = 1.0 / hf_rope.config.rope_scaling["factor"]
+
+        # Use MultiModalRotaryEmbedding for Qwen2.5-VL's M-RoPE
+        m_rope = MultiModalRotaryEmbedding(
             dim=dim,
             base=base,
-            distance_scale=distance_scale
+            mrope_section=mrope_section,
+            attention_scaling=attention_scaling,
         )
-        
-        model.position_bias = rope
+        model.position_bias = m_rope
     else:
-        raise ValueError(f"Only supports Qwen2 models, not {model.__class__.__name__}.")
+        raise ValueError(f"Only supports Qwen2, Qwen2.5VL models, not {model.__class__.__name__}.")
 
 
     def set_forward(m):
