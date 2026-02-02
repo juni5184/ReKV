@@ -4,7 +4,6 @@ from logzero import logger
 from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
 from model.patch import patch_hf
-from model.abstract_rekv import Abstract_ReKV
 from model.streaming_vision_process import (
     fetch_video,
     FPS,
@@ -281,11 +280,19 @@ class Qwen2_5VL_ReKV(Qwen2_5_VLForConditionalGeneration):
         )
         return video
 
+    def calc_memory_usage(self):
+        """Calculate CPU memory usage of KV cache."""
+        if self.kv_cache is None:
+            return 0
+        n_layers = len(self.kv_cache)
+        return n_layers * self.kv_cache[0].calculate_cpu_memory()
+
     def clear_cache(self):
         """Clear KV cache and reset dynamic state."""
-        Abstract_ReKV.clear_cache(self)
+        self.kv_cache = None
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
         self._tokens_per_frame = None
-
 
 def load_model(model_path='Qwen/Qwen2.5-VL-7B-Instruct',
                n_init=None, n_local=None, topk=64, chunk_size=1,

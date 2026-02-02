@@ -4,8 +4,7 @@ from logzero import logger
 from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 from transformers.cache_utils import DynamicCache
 
-# System prompt template - <|im_start|>user will be followed by video
-SYSTEM_PROMPT_TEMPLATE = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+SYSTEM_PROMPT = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
 VIDEO_PLACEHOLDER = "<|vision_start|><|video_pad|><|vision_end|>"
 FPS_MIN_FRAMES = 4
 VIDEO_MAXFRAMES = 768
@@ -18,7 +17,7 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
         self.kv_cache = None
         self.processor = None
         self._rope_deltas = None  # Track rope deltas for position continuation
-        
+        self.system_prompt = SYSTEM_PROMPT
         # Sliding window attention settings
         self.use_sliding_window = False
         self.n_local = 15000  # default window size
@@ -26,6 +25,7 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
     def clear_cache(self):
         self.kv_cache = None
         self._rope_deltas = None
+        self._true_seq_len = 0
         # Also clear model's internal rope_deltas
         if hasattr(self.model, 'rope_deltas'):
             self.model.rope_deltas = None
@@ -76,7 +76,7 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
         with the system prompt tokens.
         """
         # Tokenize system prompt
-        system_tokens = self.processor.tokenizer(SYSTEM_PROMPT_TEMPLATE, return_tensors="pt")
+        system_tokens = self.processor.tokenizer(SYSTEM_PROMPT, return_tensors="pt")
         input_ids = system_tokens["input_ids"].to(self.device)
         seq_len = input_ids.shape[1]
 
@@ -96,6 +96,7 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
             return_dict=True,
         )
         self.kv_cache = output.past_key_values
+        self._true_seq_len = self.kv_cache[0][0].shape[2]
         # Text-only encoding has no rope adjustment
         self._rope_deltas = torch.zeros(1, device=self.device, dtype=torch.long)
         self.model.rope_deltas = self._rope_deltas
@@ -208,6 +209,7 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
             return_dict=True,
         )
         self.kv_cache = output.past_key_values
+        self._true_seq_len = self.kv_cache[0][0].shape[2]
 
     def _compute_text_position_ids(self, seq_len, past_seq_len):
         """Compute 1D position IDs for text, continuing from past sequence.
@@ -239,15 +241,15 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
 
         output_ids = []
 
-        # Get current cache length for position continuation
-        past_seq_len = self.kv_cache[0][0].shape[2]  # (batch, heads, seq_len, head_dim)
+        # Use true sequence length for position computation (not cache size, which may be truncated)
+        true_seq_len = self._true_seq_len
 
         # NOTE: Only input the question to perform retrieval (ReKV style)
         question_ids = self.processor.tokenizer(input_text["question"]).input_ids
         question_ids = torch.as_tensor([question_ids], device=device)
 
         # Compute position IDs continuing from video encoding
-        question_pos_ids = self._compute_text_position_ids(question_ids.shape[1], past_seq_len)
+        question_pos_ids = self._compute_text_position_ids(question_ids.shape[1], true_seq_len)
 
         out = self.language_model(
             input_ids=question_ids,
@@ -256,7 +258,7 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
             past_key_values=self._truncate_kv_cache(self.kv_cache),
         )
         past_key_values = out.past_key_values
-        past_seq_len = past_key_values[0][0].shape[2]
+        true_seq_len += question_ids.shape[1]
 
         for i in range(max_new_tokens):
             if i == 0:  # prefill with full prompt
@@ -264,7 +266,7 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
                 prompt_ids = torch.as_tensor([prompt_ids], device=device)
 
                 # Compute position IDs for prompt
-                prompt_pos_ids = self._compute_text_position_ids(prompt_ids.shape[1], past_seq_len)
+                prompt_pos_ids = self._compute_text_position_ids(prompt_ids.shape[1], true_seq_len)
 
                 inputs_embeds = self.get_input_embeddings()(prompt_ids)
                 out = self.language_model(
@@ -274,11 +276,11 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
                     past_key_values=self._truncate_kv_cache(past_key_values),
                 )
                 past_key_values = out.past_key_values
-                past_seq_len = past_key_values[0][0].shape[2]
+                true_seq_len += prompt_ids.shape[1]
                 logits = self.lm_head(out.last_hidden_state)
             else:  # decoding one token at a time
                 # Position for single token
-                token_pos_ids = self._compute_text_position_ids(1, past_seq_len)
+                token_pos_ids = self._compute_text_position_ids(1, true_seq_len)
 
                 out = self.language_model(
                     input_ids=torch.as_tensor([[token]], device=device),
@@ -287,7 +289,7 @@ class Qwen2_5VL_Vanilla(Qwen2_5_VLForConditionalGeneration):
                     past_key_values=self._truncate_kv_cache(past_key_values),
                 )
                 past_key_values = out.past_key_values
-                past_seq_len = past_key_values[0][0].shape[2]
+                true_seq_len += 1
                 logits = self.lm_head(out.last_hidden_state)
 
             last_token_logits = logits[0, -1, :]

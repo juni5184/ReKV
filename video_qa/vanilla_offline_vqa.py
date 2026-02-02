@@ -46,9 +46,15 @@ class VanillaVQA(BaseVQA):
             logger.error(f"Video not found: {video_path}")
             return
 
+        if not isinstance(video, torch.Tensor):
+            video_tensor = torch.from_numpy(video)
+            video_tensor = video_tensor.permute(0, 3, 1, 2)
+        else:
+            video_tensor = video
+
         self.qa_model.clear_cache()
         self.qa_model.encode_init_prompt()
-        self.qa_model.encode_video(video)
+        self.qa_model.encode_video(video_tensor)
 
         # Process each question using the same video KV-cache
         if 'conversations' in video_sample:
