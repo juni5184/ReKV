@@ -111,10 +111,12 @@ class MultiModalRotaryEmbedding(nn.Module):
             ]
         else:
             self.mrope_section = list(mrope_section)
+            print(f"self.mrope_section: {self.mrope_section}")
 
         # Validate section sizes
-        expected_size = dim // 2
-        actual_size = sum(self.mrope_section)
+        expected_size = dim // 2 # 64
+        actual_size = sum(self.mrope_section) # 64
+        print(f"actual_size: {actual_size}, expected_size: {expected_size}")
         assert actual_size == expected_size, (
             f"mrope_section sum ({actual_size}) must equal dim // 2 ({expected_size})"
         )
@@ -241,11 +243,9 @@ class MultiModalRotaryEmbedding(nn.Module):
             # Create 1D positions and replicate across 3 dimensions
             positions = torch.arange(self._seq_len_cached, device=device, dtype=torch.long)
             position_ids = positions.unsqueeze(0).unsqueeze(0).expand(3, 1, -1)
-
             self._cos_cached, self._sin_cached = self._compute_cos_sin(
                 position_ids, device, dtype
             )
-
         return self._cos_cached, self._sin_cached
 
     def apply_rotary_one_pos(
@@ -325,7 +325,7 @@ class MultiModalRotaryEmbedding(nn.Module):
         """
         return self.get_cos_sin_cache(seq_len, device, torch.float32)
 
-    def apply_rotary_pos_emb(
+    def apply_rotary_pos_emb_slice(
         self,
         x: torch.Tensor,
         length: int,
@@ -337,6 +337,8 @@ class MultiModalRotaryEmbedding(nn.Module):
 
         For M-RoPE, combines the 3 position dimensions since text tokens
         use identical positions across all dimensions.
+
+        Compatible with RotaryEmbeddingESM interface.
 
         Args:
             x: Input tensor of shape (batch, heads, seq_len, head_dim)
@@ -431,8 +433,8 @@ class MultiModalRotaryEmbedding(nn.Module):
         k_len = k.size(seq_dim)
 
         return (
-            self.apply_rotary_pos_emb(q, q_len, k_len, self._cos_cached, self._sin_cached),
-            self.apply_rotary_pos_emb(k, k_len, k_len, self._cos_cached, self._sin_cached),
+            self.apply_rotary_pos_emb_slice(q, q_len, k_len, self._cos_cached, self._sin_cached),
+            self.apply_rotary_pos_emb_slice(k, k_len, k_len, self._cos_cached, self._sin_cached),
         )
 
 
