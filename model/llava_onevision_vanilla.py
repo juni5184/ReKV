@@ -58,6 +58,7 @@ class LlavaOneVision_Vanilla(LlavaOnevisionForConditionalGeneration):
         """Truncate KV cache to n_local if sliding window is enabled."""
         if not self.use_sliding_window or past_key_values is None:
             return past_key_values
+        
         # Truncate the key-values to keep only the last n_local tokens along sequence dim
         truncated_cache = DynamicCache()
         for layer_idx in range(len(past_key_values)):

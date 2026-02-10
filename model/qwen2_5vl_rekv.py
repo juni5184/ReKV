@@ -96,7 +96,9 @@ class Qwen2_5VL_ReKV(Qwen2_5_VLForConditionalGeneration):
     def _compute_tokens_per_frame(self, video_grid_thw):
         """Return tokens per frame from merged grid size."""
         t, h, w = video_grid_thw[0].tolist()
+        logger.debug(f"video_grid_thw: t={t}, h={h}, w={w}")
         tokens_per_frame = (h // self._spatial_merge_size) * (w // self._spatial_merge_size)
+        logger.debug(f"tokens_per_frame: {tokens_per_frame}")
         return tokens_per_frame
 
     def _get_video_features(self, pixel_values_videos, video_grid_thw):
@@ -140,6 +142,7 @@ class Qwen2_5VL_ReKV(Qwen2_5_VLForConditionalGeneration):
         video_features = self._get_video_features(pixel_values_videos, video_grid_thw)
 
         num_frames = video_chunk.shape[0]
+        logger.debug(f"video chunk frames: {num_frames}, tokens per frame: {tokens_per_frame}")
         expected_tokens = num_frames * tokens_per_frame
         actual_tokens = video_features.shape[1]
         logger.debug(f"Video chunk: {num_frames} frames, {actual_tokens} tokens (expected: {expected_tokens})")
@@ -166,11 +169,16 @@ class Qwen2_5VL_ReKV(Qwen2_5_VLForConditionalGeneration):
             h_patches = h // PATCH_SIZE // SPATIAL_MERGE_SIZE
             w_patches = w // PATCH_SIZE // SPATIAL_MERGE_SIZE
             est_tokens_per_frame = h_patches * w_patches
+            logger.debug(f"Frame shape: {h}x{w}, patches: {h_patches}x{w_patches}, est_tokens_per_frame: {est_tokens_per_frame}")
 
             encode_chunk_size = max(1, (self.n_local - 100) // est_tokens_per_frame)
-            logger.info(f'Auto encode_chunk_size={encode_chunk_size} (est {est_tokens_per_frame} tokens/frame, n_local={self.n_local})')
+            logger.info(
+                f'Auto encode_chunk_size={encode_chunk_size} '
+                f'(est {est_tokens_per_frame} tokens/frame, n_local={self.n_local})'
+            )
 
         num_chunks = num_frames // encode_chunk_size
+        logger.debug(f"num_chunks: {num_chunks}")
 
         for chunk_idx in range(num_chunks):
             start_idx = chunk_idx * encode_chunk_size
@@ -186,6 +194,32 @@ class Qwen2_5VL_ReKV(Qwen2_5_VLForConditionalGeneration):
             self._encode_video_chunk(remaining_video)
 
         logger.debug(f'Total KV-Cache RAM usage: {self.calc_memory_usage() / (1024**3):.1f} GB')
+
+        # === Reprod. Summary ===
+        tokens_per_frame = self._tokens_per_frame or "N/A"
+        h, w = video.shape[2], video.shape[3]
+
+        # Check frame alignment (per CLAUDE.md: atomic unit is FRAME)
+        frame_aligned = (
+            isinstance(tokens_per_frame, int) and
+            self.n_frame_tokens > 1 and
+            tokens_per_frame % self.n_frame_tokens == 0
+        )
+        alignment_status = "FRAME-ALIGNED" if frame_aligned else "TOKEN-LEVEL"
+
+        logger.info(
+            f"\n{'='*60}\n"
+            f"Qwen2.5-VL ReKV encode_video summary\n"
+            f"  Sampling         : {num_frames} frames (chunk_size={encode_chunk_size})\n"
+            f"  Frame shape      : {tuple(video.shape)} (T, C, H, W)\n"
+            f"  Tokens/frame     : {tokens_per_frame}\n"
+            f"  Block size       : {self.n_frame_tokens} ({alignment_status})\n"
+            f"  Total vis tok    : {tokens_per_frame} * {num_frames} = {tokens_per_frame * num_frames if isinstance(tokens_per_frame, int) else 'N/A'}\n"
+            f"  n_local          : {self.n_local}\n"
+            f"  topk             : {self.topk}\n"
+            f"  Budget (local)   : {self.n_local} tokens\n"
+            f"{'='*60}"
+        )
 
     @torch.inference_mode()
     def question_answering(self, input_text, max_new_tokens=128, retrieved_indices=None):
@@ -245,6 +279,15 @@ class Qwen2_5VL_ReKV(Qwen2_5_VLForConditionalGeneration):
             skip_special_tokens=True,
             spaces_between_special_tokens=False,
             clean_up_tokenization_spaces=True,
+        )
+
+        # === Reprod. Budget Summary ===
+        final_kv_len = past_key_values[0][0].shape[2]
+        logger.info(
+            f"Qwen2.5-VL ReKV QA budget: "
+            f"n_local={self.n_local}, topk={self.topk}, "
+            f"tokens/frame={self._tokens_per_frame}, "
+            f"final_kv={final_kv_len}"
         )
 
         return output
@@ -310,6 +353,7 @@ def load_model(model_path='Qwen/Qwen2.5-VL-7B-Instruct',
     processor = AutoProcessor.from_pretrained(model_path)
     init_prompt = SYSTEM_PROMPT_TEMPLATE
     init_prompt_ids = processor.tokenizer(init_prompt, return_tensors="pt").input_ids.to(device)
+    logger.debug(f"init_prompt_ids shape: {init_prompt_ids.shape}")
 
     inf_llm_config = {
         'n_init': init_prompt_ids.shape[1] if n_init is None else n_init,

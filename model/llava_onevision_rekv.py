@@ -94,7 +94,16 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
             spaces_between_special_tokens=False,
             clean_up_tokenization_spaces=True,
         )
-        
+
+        # === Reprod. Budget Summary ===
+        final_kv_len = past_key_values[0][0].shape[2]
+        logger.info(
+            f"LLaVA-OV ReKV QA budget: "
+            f"n_local={self.n_local}, topk={self.topk}, "
+            f"tokens/frame={self.n_frame_tokens}, "
+            f"final_kv={final_kv_len}"
+        )
+
         return output
 
 

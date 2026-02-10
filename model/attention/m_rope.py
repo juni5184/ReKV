@@ -111,12 +111,10 @@ class MultiModalRotaryEmbedding(nn.Module):
             ]
         else:
             self.mrope_section = list(mrope_section)
-            print(f"self.mrope_section: {self.mrope_section}")
 
         # Validate section sizes
-        expected_size = dim // 2 # 64
-        actual_size = sum(self.mrope_section) # 64
-        print(f"actual_size: {actual_size}, expected_size: {expected_size}")
+        expected_size = dim // 2
+        actual_size = sum(self.mrope_section)
         assert actual_size == expected_size, (
             f"mrope_section sum ({actual_size}) must equal dim // 2 ({expected_size})"
         )

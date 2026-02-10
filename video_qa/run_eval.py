@@ -119,13 +119,10 @@ def eval_videomme(args):
     os.makedirs(save_dir, exist_ok=True)
     solver = f'{args.solver}_offline_vqa'
     if args.sample:
-        anno_path = "data/videomme/test_short_sample.json"
-        # anno_path = "data/videomme/test_long_sample.json"
+        # anno_path = "data/videomme/test_short.json"
+        anno_path = "data/videomme/test_long.json"
     else:
-        anno_path = "data/videomme/test_short.json"
-        # anno_path = "data/videomme/test_medium.json"
-        # anno_path = "data/videomme/test_long.json"
-        # anno_path = "data/videomme/test.json"
+        anno_path = "data/videomme/test.json"
     if not args.only_eval:
         processes = []
         for idx in range(0, num_chunks):

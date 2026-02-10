@@ -58,7 +58,7 @@ class Abstract_ReKV:
             end_idx = start_idx + remaining_frames
             remaining_video = video[start_idx:end_idx]
             self._encode_video_chunk(remaining_video)
-        
+
         logger.debug(f'KV-Cache RAM usage: {self.calc_memory_usage() / (1024**3):.1f} GB')
 
     @torch.inference_mode()
