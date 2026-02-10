@@ -61,6 +61,21 @@ class Abstract_ReKV:
 
         logger.debug(f'KV-Cache RAM usage: {self.calc_memory_usage() / (1024**3):.1f} GB')
 
+        # === Reprod. Summary ===
+        tokens_per_frame = self.n_frame_tokens
+        total_visual_tokens = num_frames * tokens_per_frame
+        logger.info(
+            f"\n{'='*60}\n"
+            f"LLaVA-OV ReKV encode_video summary\n"
+            f"  Sampling         : {num_frames} frames (chunk_size={encode_chunk_size})\n"
+            f"  Tokens/frame     : {tokens_per_frame}\n"
+            f"  Total vis tok    : {tokens_per_frame} * {num_frames} = {total_visual_tokens}\n"
+            f"  n_local          : {self.n_local}\n"
+            f"  topk             : {self.topk}\n"
+            f"  Budget (local)   : {self.n_local} tokens\n"
+            f"{'='*60}"
+        )
+
     @torch.inference_mode()
     def question_answering(self, input_text, max_new_tokens=128):
         pass

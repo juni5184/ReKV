@@ -21,8 +21,8 @@ def eval_qaego4d(args):
     os.makedirs(save_dir, exist_ok=True)
     solver = f'{args.solver}_offline_vqa'
     if args.sample:
-        # anno_path = "data/qaego4d/test_mc_sample.json" # sample 55
-        anno_path = "data/qaego4d/test_mc_sample_2.json" # sample 20
+        anno_path = "data/qaego4d/test_mc_sample.json" # sample 55
+        # anno_path = "data/qaego4d/test_mc_sample_2.json" # sample 20
     else:
         anno_path = "data/qaego4d/test_mc.json"
     if not args.only_eval:

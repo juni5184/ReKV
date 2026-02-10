@@ -315,17 +315,19 @@ def fetch_video(
     # Propagate video_chunk_frames to ele dict for streaming mode
     if video_chunk_frames > 0:
         ele["frames_per_video_chunk"] = video_chunk_frames
+    logger.info(f"video_chunk_frames: {video_chunk_frames}")
 
     # Read video with precise FPS sampling
     video, sample_fps = _read_video_decord(ele)
 
     nframes, _, height, width = video.shape
-
+    logger.info(f"nframes: {nframes}, height: {height}, width: {width}")
     # Compute effective_nframes for resize calculation
     # This is the key optimization: use video_chunk_frames instead of total nframes
     if video_chunk_frames > 0:
         effective_nframes = video_chunk_frames
         logger.info(f"Using video_chunk_frames={video_chunk_frames} for resize (actual nframes={nframes})")
+        logger.info(f"effective_nframes = video_chunk_frames: {effective_nframes}") # 768
     else:
         effective_nframes = nframes
 
@@ -355,7 +357,7 @@ def fetch_video(
             min_pixels=min_pixels,
             max_pixels=max_pixels,
         )
-
+    logger.info(f"resized_height: {resized_height}, resized_width: {resized_width}")
     logger.info(
         f"Video resize: {height}x{width} → {resized_height}x{resized_width}, "
         f"nframes={nframes}, effective_nframes={effective_nframes}, max_pixels={max_pixels}"
