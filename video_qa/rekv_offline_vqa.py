@@ -29,21 +29,18 @@ class ReKVOfflineVQA(BaseVQA):
 
     @torch.inference_mode()
     def analyze_a_video(self, video_sample):
+        # load and preprocess video frames for QA        
         if 'video_path' in video_sample:
             video_path = video_sample['video_path']
             video_path = video_path.replace('data', '/scratch2/juni5184/datasets')
         else:
             video_path = f'/scratch2/jshyun/datasets/Video-MME/videos/{video_sample["videoID"]}.mp4'
-
+        
         video = self.load_video(video_path)
-        if not isinstance(video, torch.Tensor):
-            video_tensor = torch.from_numpy(video).permute(0, 3, 1, 2)
-        else:
-            video_tensor = video
-
+        
         self.qa_model.clear_cache()
-        self.qa_model.encode_init_prompt()
-        self.qa_model.encode_video(video_tensor)
+        # self.qa_model.encode_init_prompt() # call in encode_video
+        self.qa_model.encode_video(video, self.encode_chunk_size) 
 
         for sample in video_sample['conversations']:
             logger.debug(f'sample: {sample}')

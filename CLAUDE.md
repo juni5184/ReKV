@@ -21,7 +21,7 @@ Requires a pinned transformers commit (`66bc4def`) installed from source. Models
 
 ```bash
 python -m video_qa.run_eval \
-    --num_chunks 8 \
+    --num_chunks 4 \
     --model llava_ov_7b \
     --dataset qaego4d \
     --sample_fps 0.5 \
