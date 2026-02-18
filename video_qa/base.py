@@ -12,12 +12,11 @@ from decord import VideoReader, cpu
 from transformers import (
     logging,
     LlavaOnevisionForConditionalGeneration, LlavaOnevisionProcessor,
-    VideoLlavaForConditionalGeneration, VideoLlavaProcessor
 )
 import logzero
 from logzero import logger
 
-from model import llava_onevision_rekv, video_llava_rekv, longva_rekv
+from model import llava_onevision_rekv
 
 
 MODELS = {
@@ -32,22 +31,6 @@ MODELS = {
         'model_class': LlavaOnevisionForConditionalGeneration,
         'processor_class': LlavaOnevisionProcessor,
         'model_path': 'model_zoo/llava-onevision-qwen2-7b-ov-hf',
-    },
-    'llava_ov_72b': {
-        'load_func': llava_onevision_rekv.load_model,
-        'model_class': LlavaOnevisionForConditionalGeneration,
-        'processor_class': LlavaOnevisionProcessor,
-        'model_path': 'model_zoo/llava-onevision-qwen2-72b-ov-hf',
-    },
-    'video_llava_7b': {
-        'load_func': video_llava_rekv.load_model,
-        'model_class': VideoLlavaForConditionalGeneration,
-        'processor_class': VideoLlavaProcessor,
-        'model_path': 'model_zoo/Video-LLaVA-7B-hf',
-    },
-    'longva_7b': {
-        'load_func': longva_rekv.load_model,
-        'model_path': 'model_zoo/LongVA-7B',
     },
 }
 
@@ -89,12 +72,6 @@ class BaseVQA:
         return chunks[k]
 
     def load_video(self, video_path):
-        if 'mlvu' in video_path:
-            video_path = video_path.replace('data/mlvu/videos', '/scratch2/juni5184/datasets/MVLU/MLVU/video')
-        elif 'qaego4d' in video_path:
-            video_path = video_path.replace('data/qaego4d/videos', '/scratch2/juni5184/datasets/QAEgo4D-MC-test/videos')
-        else:
-            raise ValueError(f'Invalid video path: {video_path}')
         vr = VideoReader(video_path, ctx=cpu(0))
         fps = round(vr.get_avg_fps())
         frame_idx = [i for i in range(0, len(vr), int(fps / self.sample_fps))]

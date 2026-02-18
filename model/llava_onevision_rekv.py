@@ -12,7 +12,8 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
         Abstract_ReKV.__init__(self, processor, n_frame_tokens, init_prompt_ids, n_local, topk, chunk_size)
 
     def get_prompt(self, query, mc=False):
-        prompt =  f"\n{query}<|im_end|><|im_start|>assistant\n"
+        prompt = f"\n{query}<|im_end|>\n<|im_start|>assistant\n"
+
         if mc:
             prompt += 'Best option: ('
         return prompt
@@ -29,7 +30,7 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
             selected_video_feature = selected_video_feature
         video_features = self.multi_modal_projector(selected_video_feature)
 
-        video_features = self.apply_pooling(video_features)
+        video_features = self.model.apply_pooling(video_features)
         video_features = video_features.reshape(batch_size, frames * video_features.shape[1], -1)  # (B, Nv*196, D)
         return video_features
 
@@ -37,9 +38,7 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
     def question_answering(self, input_text, max_new_tokens=128, retrieved_indices=None):
         device = self.device
         stop_token_ids = [self.processor.tokenizer.eos_token_id]
-
         output_ids = []
-        stopped = False
 
         # NOTE: Only input the question to perform retrieval.
         input_ids = self.processor.tokenizer(input_text['question']).input_ids
@@ -88,12 +87,7 @@ class LlavaOneVision_ReKV(LlavaOnevisionForConditionalGeneration, Abstract_ReKV)
 
             output_ids.append(token)
 
-            if token in stop_token_ids:
-                stopped = True
-            else:
-                stopped = False
-
-            if i == max_new_tokens - 1 or stopped:
+            if i == max_new_tokens - 1 or token in stop_token_ids:
                 break
 
         output = self.processor.tokenizer.decode(
@@ -110,10 +104,11 @@ def load_model(model_path='model_zoo/LLaVA/llava-onevision-qwen2-7b-ov-hf',
                n_init=None, n_local=None, topk=64, chunk_size=1):
     device = 'cuda'
     n_frame_tokens = 196
+
     processor = LlavaOnevisionProcessor.from_pretrained(model_path)
-    
-    init_prompt = '<|im_start|>system \nYou are a helpful assistant.<|im_end|><|im_start|>user '
+    init_prompt = '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n'
     init_prompt_ids = processor.tokenizer(init_prompt, return_tensors="pt").input_ids.to(device)
+    
     inf_llm_config = {
         'n_init': init_prompt_ids.shape[1] if n_init is None else n_init,
         'n_local': n_local,
