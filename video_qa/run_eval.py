@@ -120,7 +120,7 @@ def eval_videomme(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="llava_ov_7b", choices=['llava_ov_0.5b', 'llava_ov_7b'])
+    parser.add_argument("--model", type=str, default="llava_ov_7b", choices=['llava_ov_0.5b', 'llava_ov_7b', 'llava_ov_0.5b_vanilla', 'llava_ov_7b_vanilla'])
     parser.add_argument("--dataset", type=str, default=None, choices=['mlvu', 'qaego4d', 'videomme'])
     parser.add_argument("--num_chunks", type=int, default=1)
     parser.add_argument("--only_eval", action="store_true")

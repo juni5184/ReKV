@@ -16,7 +16,7 @@ from transformers import (
 import logzero
 from logzero import logger
 
-from model import llava_onevision_rekv
+from model import llava_onevision_rekv, llava_onevision_vanilla
 
 
 MODELS = {
@@ -32,15 +32,29 @@ MODELS = {
         'processor_class': LlavaOnevisionProcessor,
         'model_path': 'model_zoo/llava-onevision-qwen2-7b-ov-hf',
     },
+    'llava_ov_0.5b_vanilla': {
+        'load_func': llava_onevision_vanilla.load_model,
+        'model_class': LlavaOnevisionForConditionalGeneration,
+        'processor_class': LlavaOnevisionProcessor,
+        'model_path': '/scratch2/juni5184/model_zoo/llava-onevision-qwen2-0.5b-ov-hf',
+    },
+    'llava_ov_7b_vanilla': {
+        'load_func': llava_onevision_vanilla.load_model,
+        'model_class': LlavaOnevisionForConditionalGeneration,
+        'processor_class': LlavaOnevisionProcessor,
+        'model_path': 'model_zoo/llava-onevision-qwen2-7b-ov-hf',
+    },
 }
 
 
 class BaseVQA:
-    def __init__(self, anno, save_dir, sample_fps,
-                 qa_model, qa_processor=None,
-                 num_chunks=None, chunk_idx=None,
-                 retrieve_size=64, chunk_size=1) -> None:
-        
+    def __init__(
+        self, anno, save_dir, sample_fps,
+        qa_model, qa_processor,
+        retrieve_size=64, chunk_size=1, encode_chunk_size=64,
+        num_chunks=None, chunk_idx=None
+    ):
+
         self.sample_fps = sample_fps
 
         self.qa_model = qa_model
@@ -50,6 +64,7 @@ class BaseVQA:
         assert chunk_size <= retrieve_size, f'chunk_size: {chunk_size}, retrieve_size: {retrieve_size}'
         self.retrieve_size = retrieve_size
         self.chunk_size = chunk_size
+        self.encode_chunk_size = encode_chunk_size
 
         self.num_chunks = num_chunks
         self.chunk_idx = chunk_idx
@@ -64,7 +79,9 @@ class BaseVQA:
 
     def split_list(self, lst, n):
         """Split a list into n (roughly) equal-sized chunks"""
-        chunk_size = math.ceil(len(lst) / n)  # integer division
+        lst = list(lst)
+        random.shuffle(lst)
+        chunk_size = math.ceil(len(lst) / n) # integer division
         return [lst[i : i + chunk_size] for i in range(0, len(lst), chunk_size)]
 
     def get_chunk(self, lst, n, k):
@@ -76,6 +93,7 @@ class BaseVQA:
         fps = round(vr.get_avg_fps())
         frame_idx = [i for i in range(0, len(vr), int(fps / self.sample_fps))]
         video = vr.get_batch(frame_idx).asnumpy()
+        video = torch.tensor(video).permute(0, 3, 1, 2)
         logger.debug(f'video shape: {video.shape}')
         return video
     
@@ -172,6 +190,7 @@ def work(QA_CLASS):
     parser.add_argument("--n_local", type=int, default=15000)
     parser.add_argument("--retrieve_size", type=int, default=64)
     parser.add_argument("--retrieve_chunk_size", type=int, default=1)
+    parser.add_argument("--encode_chunk_size", type=int, default=64)
     parser.add_argument("--debug", type=str2bool, nargs='?', const=True, default=True)
     args = parser.parse_args()
 
@@ -192,8 +211,9 @@ def work(QA_CLASS):
     videoqa_model, videoqa_processor = load_func(
         model_path=model_path,
         n_local=args.n_local,
-        topk=args.retrieve_size,
+        retrieve_size=args.retrieve_size,
         chunk_size=args.retrieve_chunk_size,
+        sample_fps=args.sample_fps
     )
 
     # Load ground truth file
@@ -206,6 +226,7 @@ def work(QA_CLASS):
         qa_processor=videoqa_processor,
         retrieve_size=args.retrieve_size,
         chunk_size=args.retrieve_chunk_size,
+        encode_chunk_size=args.encode_chunk_size,
         num_chunks=args.num_chunks,
         chunk_idx=args.chunk_idx,
         save_dir=args.save_dir,
