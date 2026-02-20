@@ -18,7 +18,7 @@ def exec(cmd, sub=False, device=None):
 
 def eval_mlvu(args):
     num_chunks = args.num_chunks
-    save_dir = f"results/{args.model}/mlvu/{args.retrieve_size}-{args.sample_fps}"
+    save_dir = f"results/{args.model}/{args.solver}/mlvu/{args.retrieve_size}-{args.sample_fps}"
     solver = "rekv_offline_vqa"
     if not args.only_eval:
         # QA
@@ -34,7 +34,8 @@ def eval_mlvu(args):
                     "--anno_path", anno_path,
                     "--debug", args.debug,
                     "--num_chunks", str(num_chunks),
-                    "--chunk_idx", str(idx)]
+                    "--chunk_idx", str(idx),
+                    "--solver", args.solver]
             p = multiprocessing.Process(target=exec, args=(cmd, True, f'{4*idx},{4*idx+1},{4*idx+2},,{4*idx+3}' if args.model=='llava_ov_72b' else str(idx)))  # llava_ov_72b needs 4x 80GB GPUs
             processes.append(p)
             p.start()
@@ -52,7 +53,7 @@ def eval_mlvu(args):
 
 def eval_qaego4d(args):
     num_chunks = args.num_chunks
-    save_dir = f"results/{args.model}/qaego4d/{args.retrieve_size}-{args.sample_fps}"
+    save_dir = f"results/{args.model}/{args.solver}/qaego4d/{args.retrieve_size}-{args.sample_fps}"
     solver = "rekv_offline_vqa"
     anno_path = "data/qaego4d/test_mc.json" if not args.sample else "data/qaego4d/test_mc_sample.json"
     if not args.only_eval:
@@ -68,7 +69,8 @@ def eval_qaego4d(args):
                     "--anno_path", anno_path,
                     "--debug", args.debug,
                     "--num_chunks", str(num_chunks),
-                    "--chunk_idx", str(idx)]
+                    "--chunk_idx", str(idx),
+                    "--solver", args.solver]
             p = multiprocessing.Process(target=exec, args=(cmd, True, f'{4*idx},{4*idx+1},{4*idx+2},,{4*idx+3}' if args.model=='llava_ov_72b' else str(idx)))  # llava_ov_72b needs 4x 80GB GPUs
             processes.append(p)
             p.start()
@@ -86,7 +88,7 @@ def eval_qaego4d(args):
 
 def eval_videomme(args):   
     num_chunks = args.num_chunks
-    save_dir = f"results/{args.model}/videomme/{args.retrieve_size}-{args.sample_fps}"
+    save_dir = f"results/{args.model}/{args.solver}/videomme/{args.retrieve_size}-{args.sample_fps}"
     solver = "rekv_offline_vqa"
     anno_path = "data/videomme/test.json" if not args.sample else "data/videomme/test_long.json"
     if not args.only_eval:
@@ -102,7 +104,8 @@ def eval_videomme(args):
                     "--anno_path", anno_path,
                     "--debug", args.debug,
                     "--num_chunks", str(num_chunks),
-                    "--chunk_idx", str(idx)]
+                    "--chunk_idx", str(idx),
+                    "--solver", args.solver]
             p = multiprocessing.Process(target=exec, args=(cmd, True, f'{4*idx},{4*idx+1},{4*idx+2},,{4*idx+3}' if args.model=='llava_ov_72b' else str(idx)))  # llava_ov_72b needs 4x 80GB GPUs
             processes.append(p)
             p.start()
@@ -120,7 +123,7 @@ def eval_videomme(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="llava_ov_7b", choices=['llava_ov_0.5b', 'llava_ov_7b', 'llava_ov_0.5b_vanilla', 'llava_ov_7b_vanilla'])
+    parser.add_argument("--model", type=str, default="llava_ov_7b", choices=['llava_ov_0.5b', 'llava_ov_7b'])
     parser.add_argument("--dataset", type=str, default=None, choices=['mlvu', 'qaego4d', 'videomme'])
     parser.add_argument("--num_chunks", type=int, default=1)
     parser.add_argument("--only_eval", action="store_true")
@@ -129,6 +132,7 @@ if __name__ == "__main__":
     parser.add_argument("--retrieve_size", type=int, default=64)
     parser.add_argument("--debug", type=str, default='false')
     parser.add_argument("--sample", action="store_true")
+    parser.add_argument("--solver", type=str, default="rekv", choices=["rekv", "vanilla", "sw"])
     args = parser.parse_args()
 
     if args.debug == 'true':
